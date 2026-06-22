@@ -1,0 +1,534 @@
+﻿{% extends "base.html" %}
+{% block title %}系统管理{% endblock %}
+{% block page_title %}系统管理{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+  .backup-card { border-left: 4px solid #1a365d; }
+  .backup-row:hover { background: #f8f9fa; }
+  .restore-warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; border-radius: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-primary">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-primary">{{ user_count }}</div>
+        <small class="text-muted">系统用户</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-success">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-success">{{ archive_count }}</div>
+        <small class="text-muted">档案总量</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-warning">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-warning">{{ borrow_pending }}</div>
+        <small class="text-muted">待审批借阅</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-info">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-info">{{ log_count }}</div>
+        <small class="text-muted">操作日志</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-0" id="adminTabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-users">
+      <i class="bi bi-people me-1"></i>用户管理
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-backup">
+      <i class="bi bi-database-down me-1"></i>数据备份
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-logs">
+      <i class="bi bi-list-check me-1"></i>操作日志
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <!-- 用户管理 -->
+  <div class="tab-pane fade show active" id="tab-users">
+    <div class="card rounded-top-0">
+      <div class="card-body py-2 border-bottom d-flex gap-2 align-items-center">
+        <span class="text-muted small">管理系统用户账号和权限</span>
+        <div class="ms-auto">
+          <button class="btn btn-sm btn-primary" onclick="openCreateUser()">
+            <i class="bi bi-person-plus me-1"></i>新建用户
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <table id="usersTable" class="table table-hover table-sm mb-0" style="width:100%">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th><th>用户名</th><th>姓名</th><th>部门</th>
+              <th>电话</th><th>角色</th><th>状态</th><th>最后登录</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据备份 -->
+  <div class="tab-pane fade" id="tab-backup">
+    <div class="card rounded-top-0">
+      <div class="card-body border-bottom">
+        <div class="row g-3 align-items-start">
+          <!-- 数据库信息 -->
+          <div class="col-md-8">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-database me-2 text-primary"></i>当前数据库状态</h6>
+            <div class="row g-2" id="dbInfoArea">
+              <div class="col-6 col-md-3">
+                <div class="card backup-card bg-light border-0 p-3 text-center">
+                  <div class="fs-4 fw-bold" id="dbSize">—</div>
+                  <small class="text-muted">数据库大小</small>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="card backup-card bg-light border-0 p-3 text-center">
+                  <div class="fs-4 fw-bold" id="archiveCount">—</div>
+                  <small class="text-muted">档案记录数</small>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="card backup-card bg-light border-0 p-3 text-center">
+                  <div class="fs-4 fw-bold" id="backupCount">—</div>
+                  <small class="text-muted">现有备份数</small>
+                </div>
+              </div>
+              <div class="col-md-12 mt-1">
+                <small class="text-muted">
+                  <i class="bi bi-folder2 me-1"></i>备份目录：<span id="backupDir" class="font-monospace small">—</span>
+                </small>
+              </div>
+            </div>
+          </div>
+          <!-- 操作按钮 -->
+          <div class="col-md-4 d-flex flex-column gap-2 align-items-start">
+            <button class="btn btn-primary w-100" id="btnCreateBackup" onclick="createBackup()">
+              <i class="bi bi-database-add me-2"></i>立即备份
+            </button>
+            <div class="text-muted small">
+              <i class="bi bi-info-circle me-1"></i>备份将完整复制当前 SQLite 数据库文件，含所有档案记录、借阅记录等。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 备份历史列表 -->
+      <div class="card-body p-0">
+        <div class="px-3 py-2 bg-light border-bottom d-flex align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-clock-history me-2"></i>备份历史</span>
+          <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="loadBackupList()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+          </button>
+        </div>
+        <div id="backupList">
+          <div class="text-center py-4 text-muted">
+            <div class="spinner-border spinner-border-sm me-2"></div>加载中...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作日志 -->
+  <div class="tab-pane fade" id="tab-logs">
+    <div class="card rounded-top-0">
+      <div class="card-body p-0">
+        <table id="logsTable" class="table table-hover table-sm mb-0" style="width:100%">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th><th>操作类型</th><th>目标类型</th><th>目标ID</th>
+              <th>操作用户</th><th>操作详情</th><th>IP地址</th><th>操作时间</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建/编辑用户 Modal -->
+<div class="modal fade" id="userModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="userModalTitle"><i class="bi bi-person-plus me-2"></i>新建用户</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="u_id">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">用户名 <span class="text-danger">*</span></label>
+            <input type="text" id="u_username" class="form-control form-control-sm" placeholder="登录账号">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">密码</label>
+            <input type="password" id="u_password" class="form-control form-control-sm" placeholder="不填则不修改">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">真实姓名</label>
+            <input type="text" id="u_real_name" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">所在部门</label>
+            <input type="text" id="u_department" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">联系电话</label>
+            <input type="text" id="u_phone" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">邮箱</label>
+            <input type="email" id="u_email" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">角色权限</label>
+            <select id="u_role" class="form-select form-select-sm">
+              <option value="viewer">浏览者（只读）</option>
+              <option value="editor">编辑者（读写）</option>
+              <option value="admin">管理员（全权）</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="activeRow" style="display:none">
+            <label class="form-label fw-semibold">账号状态</label>
+            <select id="u_active" class="form-select form-select-sm">
+              <option value="true">启用</option>
+              <option value="false">禁用</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="submitUser()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 恢复确认 Modal -->
+<div class="modal fade" id="restoreModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning bg-opacity-10">
+        <h5 class="modal-title text-warning">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>确认恢复数据库
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="restore-warning mb-3">
+          <strong>⚠️ 警告：此操作将覆盖当前所有数据！</strong>
+          <ul class="mb-0 mt-2 small">
+            <li>恢复后，当前数据库中的所有档案、借阅、用户等数据<strong>将被替换</strong>为备份时的状态。</li>
+            <li>系统会在恢复前自动创建一份"恢复前备份"以防误操作。</li>
+            <li>恢复完成后页面将自动刷新。</li>
+          </ul>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">将要恢复的备份文件：</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="bi bi-database-fill text-primary"></i></span>
+            <input type="text" id="restoreFilename" class="form-control font-monospace" readonly>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold text-danger">请输入 <code>RESTORE</code> 确认操作：</label>
+          <input type="text" id="restoreConfirmInput" class="form-control form-control-sm"
+                 placeholder="输入 RESTORE 以确认" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-warning btn-sm" id="btnConfirmRestore" onclick="confirmRestore()" disabled>
+          <i class="bi bi-arrow-counterclockwise me-1"></i>确认恢复
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+const usersTable = $('#usersTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: { url: '{{ url_for("admin.api_users") }}' },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'username' },
+    { data: 'real_name' },
+    { data: 'department' },
+    { data: 'phone' },
+    { data: 'role', orderable: false },
+    { data: 'active_badge', orderable: false },
+    { data: 'last_login' },
+    { data: null, orderable: false, width: '120px', render: (d,t,row) =>
+        `<button class="btn btn-xs btn-outline-primary me-1" onclick="editUser(${row.id})"><i class="bi bi-pencil"></i></button>
+         <button class="btn btn-xs btn-outline-danger" onclick="deleteUser(${row.id},'${row.username}')"><i class="bi bi-trash"></i></button>`
+    }
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20, order: [[0,'asc']]
+});
+
+const logsTable = $('#logsTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: { url: '{{ url_for("admin.api_logs") }}' },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'action', orderable: false },
+    { data: 'target_type' },
+    { data: 'target_id' },
+    { data: 'user' },
+    { data: 'detail' },
+    { data: 'ip_address' },
+    { data: 'timestamp' },
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 30, order: [[0,'desc']]
+});
+
+// 切换到日志 tab 时刷新
+document.querySelector('[data-bs-target="#tab-logs"]').addEventListener('shown.bs.tab', () => logsTable.ajax.reload());
+
+// 切换到备份 tab 时加载信息
+document.querySelector('[data-bs-target="#tab-backup"]').addEventListener('shown.bs.tab', () => {
+  loadBackupInfo();
+  loadBackupList();
+});
+
+// ── 备份功能 ──
+function loadBackupInfo() {
+  fetch('{{ url_for("admin.api_backup_info") }}').then(r=>r.json()).then(d => {
+    document.getElementById('dbSize').textContent = d.db_size_str;
+    document.getElementById('archiveCount').textContent = d.archive_count.toLocaleString();
+    document.getElementById('backupCount').textContent = d.backup_count;
+    document.getElementById('backupDir').textContent = d.backup_dir;
+  });
+}
+
+function loadBackupList() {
+  document.getElementById('backupList').innerHTML = '<div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>加载中...</div>';
+  fetch('{{ url_for("admin.api_backup_list") }}').then(r=>r.json()).then(d => {
+    if (!d.ok) { document.getElementById('backupList').innerHTML = '<div class="p-3 text-danger">加载失败</div>'; return; }
+    if (d.backups.length === 0) {
+      document.getElementById('backupList').innerHTML = '<div class="text-center py-4 text-muted"><i class="bi bi-database fs-2 d-block mb-2 opacity-25"></i>暂无备份记录</div>';
+      return;
+    }
+    let html = '<table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>文件名</th><th>大小</th><th>备份时间</th><th width="175">操作</th></tr></thead><tbody>';
+    d.backups.forEach(b => {
+      // 自动备份文件（pre_restore）不显示"恢复"按钮，以防混淆
+      const isPreRestore = b.filename.includes('pre_restore');
+      const restoreBtn = isPreRestore
+        ? `<span class="badge bg-secondary">恢复前自动备份</span>`
+        : `<button class="btn btn-xs btn-outline-warning me-1" onclick="openRestoreModal('${b.filename}')" title="恢复到此版本">
+             <i class="bi bi-arrow-counterclockwise"></i> 恢复
+           </button>`;
+      html += `<tr class="backup-row">
+        <td><i class="bi bi-database-fill text-primary me-2"></i><span class="font-monospace small">${b.filename}</span></td>
+        <td>${b.size_str}</td>
+        <td>${b.created_at}</td>
+        <td class="text-nowrap">
+          ${restoreBtn}
+          <a href="/admin/api/backup/download/${b.filename}" class="btn btn-xs btn-outline-primary me-1" title="下载">
+            <i class="bi bi-download"></i>
+          </a>
+          <button class="btn btn-xs btn-outline-danger" onclick="deleteBackup('${b.filename}')" title="删除">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('backupList').innerHTML = html;
+  });
+}
+
+function createBackup() {
+  const btn = document.getElementById('btnCreateBackup');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>备份中...';
+
+  fetch('{{ url_for("admin.api_backup_create") }}', { method: 'POST' })
+    .then(r=>r.json()).then(d => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-database-add me-2"></i>立即备份';
+      if (d.ok) {
+        loadBackupInfo();
+        loadBackupList();
+        showToast('备份成功：' + d.filename + '（' + d.size_str + '）', 'success');
+      } else {
+        showToast('备份失败：' + d.msg, 'danger');
+      }
+    }).catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-database-add me-2"></i>立即备份';
+      showToast('备份请求失败', 'danger');
+    });
+}
+
+function deleteBackup(filename) {
+  if (!confirm('确认删除备份文件：' + filename + '？此操作不可撤销。')) return;
+  fetch('/admin/api/backup/delete/' + filename, { method: 'POST' })
+    .then(r=>r.json()).then(d => {
+      if (d.ok) { loadBackupInfo(); loadBackupList(); showToast('已删除备份文件', 'success'); }
+      else showToast('删除失败：' + d.msg, 'danger');
+    });
+}
+
+// ── 备份恢复 ──
+function openRestoreModal(filename) {
+  document.getElementById('restoreFilename').value = filename;
+  document.getElementById('restoreConfirmInput').value = '';
+  document.getElementById('btnConfirmRestore').disabled = true;
+  new bootstrap.Modal('#restoreModal').show();
+}
+
+// 监听确认输入框，只有输入 RESTORE 才激活按钮
+document.getElementById('restoreConfirmInput').addEventListener('input', function() {
+  document.getElementById('btnConfirmRestore').disabled = (this.value.trim() !== 'RESTORE');
+});
+
+function confirmRestore() {
+  const filename = document.getElementById('restoreFilename').value;
+  const confirmVal = document.getElementById('restoreConfirmInput').value.trim();
+  if (confirmVal !== 'RESTORE') { showToast('请输入 RESTORE 确认', 'warning'); return; }
+
+  const btn = document.getElementById('btnConfirmRestore');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>恢复中...';
+
+  fetch('/admin/api/backup/restore/' + filename, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      bootstrap.Modal.getInstance(document.getElementById('restoreModal')).hide();
+      if (d.ok) {
+        showToast('恢复成功！即将刷新页面...', 'success');
+        // 恢复后延迟1.5秒刷新，让用户看到Toast
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>确认恢复';
+        showToast('恢复失败：' + d.msg, 'danger');
+      }
+    })
+    .catch(() => {
+      // 恢复后服务器重启可能导致请求失败，但实际已成功
+      bootstrap.Modal.getInstance(document.getElementById('restoreModal')).hide();
+      showToast('恢复可能已成功，即将刷新页面...', 'warning');
+      setTimeout(() => location.reload(), 2000);
+    });
+}
+
+// ── 用户管理 ──
+function openCreateUser() {
+  document.getElementById('userModalTitle').innerHTML = '<i class="bi bi-person-plus me-2"></i>新建用户';
+  document.getElementById('u_id').value = '';
+  document.getElementById('activeRow').style.display = 'none';
+  ['u_username','u_password','u_real_name','u_department','u_phone','u_email'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('u_role').value = 'viewer';
+  document.getElementById('u_username').disabled = false;
+  new bootstrap.Modal('#userModal').show();
+}
+
+function editUser(id) {
+  fetch(`/admin/api/users/${id}`).then(r=>r.json()).then(u=>{
+    document.getElementById('userModalTitle').innerHTML = '<i class="bi bi-person-gear me-2"></i>编辑用户';
+    document.getElementById('u_id').value = u.id;
+    document.getElementById('u_username').value = u.username;
+    document.getElementById('u_username').disabled = true;
+    document.getElementById('u_password').value = '';
+    document.getElementById('u_real_name').value = u.real_name;
+    document.getElementById('u_department').value = u.department;
+    document.getElementById('u_phone').value = u.phone;
+    document.getElementById('u_email').value = u.email;
+    document.getElementById('u_role').value = u.role;
+    document.getElementById('u_active').value = u.active ? 'true' : 'false';
+    document.getElementById('activeRow').style.display = '';
+    new bootstrap.Modal('#userModal').show();
+  });
+}
+
+function submitUser() {
+  const id = document.getElementById('u_id').value;
+  const data = {
+    username: document.getElementById('u_username').value.trim(),
+    password: document.getElementById('u_password').value,
+    real_name: document.getElementById('u_real_name').value.trim(),
+    department: document.getElementById('u_department').value.trim(),
+    phone: document.getElementById('u_phone').value.trim(),
+    email: document.getElementById('u_email').value.trim(),
+    role: document.getElementById('u_role').value,
+    active: document.getElementById('u_active').value === 'true',
+  };
+  const url = id ? `/admin/api/users/${id}/update` : '{{ url_for("admin.api_create_user") }}';
+  fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) })
+    .then(r=>r.json()).then(d=>{
+      if (d.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
+        usersTable.ajax.reload();
+        showToast('用户信息已保存', 'success');
+      } else alert(d.msg);
+    });
+}
+
+function deleteUser(id, name) {
+  if (!confirm(`确认删除用户 "${name}"？此操作不可撤销。`)) return;
+  fetch(`/admin/api/users/${id}/delete`, {method:'POST'})
+    .then(r=>r.json()).then(d=>{ if(d.ok){ usersTable.ajax.reload(); showToast('已删除用户','success'); } else alert(d.msg); });
+}
+
+// ── Toast 通知 ──
+function showToast(msg, type='success') {
+  const id = 'toast_' + Date.now();
+  const el = document.createElement('div');
+  el.className = `toast align-items-center text-bg-${type} border-0`;
+  el.id = id;
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+    container.style.zIndex = 9999;
+    document.body.appendChild(container);
+  }
+  container.appendChild(el);
+  const toast = new bootstrap.Toast(el, { delay: 3000 });
+  toast.show();
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+}
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}档案详情{% endblock %}
+{% block page_title %}档案详情 #{{ archive.id }}{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- 基本信息 -->
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-text me-2"></i>档案信息</span>
+        <div>
+          {% if current_user.can_edit() %}
+          <a href="{{ url_for('catalog.edit', archive_id=archive.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i> 编辑</a>
+          {% endif %}
+          <a href="{{ url_for('catalog.list') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left"></i> 返回</a>
+        </div>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless">
+          <tbody>
+            <tr><td width="120" class="text-muted fw-bold">档案类别</td><td><span class="badge bg-secondary">{{ archive.category }}</span></td></tr>
+            <tr><td class="text-muted fw-bold">档号</td><td><code>{{ archive.archive_number or '-' }}</code></td></tr>
+            <tr><td class="text-muted fw-bold">全宗号</td><td>{{ archive.fonds_number or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">归档年度</td><td>{{ archive.archive_year or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">保管期限</td><td><span class="badge bg-info">{{ archive.retention_period or '-' }}</span></td></tr>
+            <tr><td class="text-muted fw-bold">分类号</td><td>{{ archive.class_number or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">件号</td><td>{{ archive.file_number or '-' }}</td></tr>
+          </tbody>
+        </table>
+
+        <h6 class="fw-bold mt-3 mb-2">文件题名</h6>
+        <p class="border rounded p-2 bg-light">{{ archive.title or '-' }}</p>
+
+        <table class="table table-sm table-borderless mt-2">
+          <tbody>
+            <tr><td width="120" class="text-muted fw-bold">责任者</td><td>{{ archive.responsible or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">文件编号</td><td>{{ archive.doc_number or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">形成日期</td><td>{{ archive.doc_date.strftime('%Y-%m-%d') if archive.doc_date else '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">页数</td><td>{{ archive.pages or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">主题词</td><td>{{ archive.keywords or '-' }}</td></tr>
+            <tr><td class="text-muted fw-bold">备注</td><td>{{ archive.remarks or '-' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧：电子版 + 区块链 + 物理位置 -->
+  <div class="col-md-4">
+    <!-- 电子版 -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-file-pdf me-2"></i>电子版</div>
+      <div class="card-body">
+        {% if archive.electronic_path %}
+          <div class="d-grid">
+            {% if current_user.role == 'admin' %}
+            <a href="#" class="btn btn-outline-success btn-sm mb-2"><i class="bi bi-download me-1"></i>下载电子版</a>
+            <a href="#" class="btn btn-outline-info btn-sm"><i class="bi bi-eye me-1"></i>在线预览</a>
+            {% else %}
+            <p class="text-muted small"><i class="bi bi-lock me-1"></i>需管理员权限或借阅审批通过后查看</p>
+            {% endif %}
+          </div>
+          <hr>
+          <small class="text-muted">文件大小: {{ (archive.electronic_size / 1024) | round(1) if archive.electronic_size else 0 }} KB</small>
+        {% else %}
+          <p class="text-muted small"><i class="bi bi-exclamation-circle me-1"></i>暂无电子版</p>
+          {% if current_user.can_edit() %}
+          <button class="btn btn-outline-primary btn-sm"><i class="bi bi-upload me-1"></i>上传电子版</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 区块链可信 -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-shield-check me-2"></i>区块链可信</div>
+      <div class="card-body">
+        {% if archive.bc_hash %}
+          <div class="mb-2">
+            <small class="text-muted">SHA-256</small>
+            <code class="d-block small bg-light p-1 rounded" style="word-break:break-all;">{{ archive.bc_hash }}</code>
+          </div>
+          <div class="mb-2">
+            <small class="text-muted">MD5</small>
+            <code class="d-block small bg-light p-1 rounded">{{ archive.bc_md5 }}</code>
+          </div>
+          {% if archive.bc_tx_id %}
+          <div class="mb-2">
+            <small class="text-muted">BCOS 交易ID</small>
+            <code class="d-block small bg-light p-1 rounded" style="word-break:break-all;">{{ archive.bc_tx_id }}</code>
+          </div>
+          {% endif %}
+          {% if archive.bc_timestamp %}
+          <small class="text-muted"><i class="bi bi-clock me-1"></i>上链时间: {{ archive.bc_timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+          {% endif %}
+        {% else %}
+          <p class="text-muted small"><i class="bi bi-shield text-muted me-1"></i>未上链</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 物理存放位置 -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-geo-alt me-2"></i>存放位置</div>
+      <div class="card-body">
+        <p class="mb-0">{{ archive.electronic_location or '未登记' }}</p>
+      </div>
+    </div>
+
+    <!-- 元数据 -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-info-circle me-2"></i>元数据</div>
+      <div class="card-body small">
+        <div>创建时间: {{ archive.created_at.strftime('%Y-%m-%d %H:%M') if archive.created_at else '-' }}</div>
+        <div>更新时间: {{ archive.updated_at.strftime('%Y-%m-%d %H:%M') if archive.updated_at else '-' }}</div>
+        <div>导入批次: {{ archive.import_batch or '-' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 关联记录 -->
+  <div class="col-12">
+    <div class="row g-3">
+      <!-- 移交记录 -->
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-header"><i class="bi bi-send me-2"></i>移交记录 ({{ transfers|length }})</div>
+          <div class="card-body p-0">
+            {% if transfers %}
+            <div class="list-group list-group-flush">
+              {% for t in transfers %}
+              <div class="list-group-item small py-2">
+                <div class="d-flex justify-content-between">
+                  <strong>[{{ t.status }}]</strong>
+                  <span class="text-muted">{{ t.transfer_date.strftime('%Y-%m-%d') if t.transfer_date else '-' }}</span>
+                </div>
+                <div class="text-muted">{{ t.from_department }} → {{ t.to_department }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 text-muted text-center small">暂无移交记录</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- 借阅记录 -->
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-header"><i class="bi bi-book me-2"></i>借阅记录 ({{ borrows|length }})</div>
+          <div class="card-body p-0">
+            {% if borrows %}
+            <div class="list-group list-group-flush">
+              {% for b in borrows %}
+              <div class="list-group-item small py-2">
+                <div class="d-flex justify-content-between">
+                  <strong>{{ b.borrower }}</strong>
+                  <span class="badge {% if b.status == '已通过' %}bg-success{% elif b.status == '已拒绝' %}bg-danger{% else %}bg-warning{% endif %}">{{ b.status }}</span>
+                </div>
+                <div class="text-muted">{{ b.borrow_date.strftime('%Y-%m-%d') if b.borrow_date else '-' }} | {{ b.borrower_department }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 text-muted text-center small">暂无借阅记录</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- 销毁记录 -->
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-header"><i class="bi bi-trash me-2"></i>销毁鉴定 ({{ destructions|length }})</div>
+          <div class="card-body p-0">
+            {% if destructions %}
+            <div class="list-group list-group-flush">
+              {% for d in destructions %}
+              <div class="list-group-item small py-2">
+                <div><strong>{{ d.opinion }}</strong></div>
+                <div class="text-muted">{{ d.appraisal_date.strftime('%Y-%m-%d') if d.appraisal_date else '-' }} | 批准人: {{ d.approver_name }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 text-muted text-center small">暂无销毁记录</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

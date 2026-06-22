@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 - 档案管理平台</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: linear-gradient(135deg, #1a365d 0%, #2d5a87 100%); min-height: 100vh; }
+    .login-card { max-width: 420px; margin: 10vh auto 0; }
+    .card { border-radius: 12px; border: none; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="card">
+      <div class="card-body p-4">
+        <div class="text-center mb-4">
+          <i class="bi bi-archive text-primary" style="font-size: 3rem;"></i>
+          <h4 class="mt-2">档案管理平台</h4>
+          <small class="text-muted">大理大学第一附属医院</small>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }} alert-dismissible fade show py-2" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}">
+          <div class="mb-3">
+            <label class="form-label">用户名</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-person"></i></span>
+              <input type="text" name="username" class="form-control" placeholder="请输入用户名" required autofocus>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">密码</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-lock"></i></span>
+              <input type="password" name="password" class="form-control" placeholder="请输入密码" required>
+            </div>
+          </div>
+          <div class="mb-3 form-check">
+            <input type="checkbox" name="remember" class="form-check-input" id="remember">
+            <label class="form-check-label" for="remember">记住我</label>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-box-arrow-in-right me-1"></i> 登 录
+          </button>
+        </form>
+
+        <hr class="my-3">
+        <div class="text-center">
+          <small class="text-muted">
+            <i class="bi bi-phone me-1"></i>
+            移动端借阅登记：
+            <a href="{{ url_for('mobile.borrow_form') }}" class="text-decoration-none" target="_blank">
+              /m/borrow
+            </a>
+          </small>
+        </div>
+      </div>
+    </div>
+    <div class="text-center mt-3">
+      <small class="text-white-50"> 2026 档案管理平台 · Flask + Bootstrap 5 </small>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

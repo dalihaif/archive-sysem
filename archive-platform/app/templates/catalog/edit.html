@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}编辑档案{% endblock %}
+{% block page_title %}编辑档案 #{{ archive.id }}{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-md-10 mx-auto">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-pencil-square me-2"></i>编辑档案信息</div>
+      <div class="card-body">
+        <form id="editForm">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">档案类别 <span class="text-danger">*</span></label>
+              <select class="form-select" name="category" required>
+                <option value="文书" {% if archive.category == '文书' %}selected{% endif %}>文书档案</option>
+                <option value="设备" {% if archive.category == '设备' %}selected{% endif %}>设备档案</option>
+                <option value="科研" {% if archive.category == '科研' %}selected{% endif %}>科研档案</option>
+                <option value="基建" {% if archive.category == '基建' %}selected{% endif %}>基建档案</option>
+                <option value="会计" {% if archive.category == '会计' %}selected{% endif %}>会计档案</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">档号</label>
+              <input type="text" class="form-control" name="archive_number" value="{{ archive.archive_number or '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">全宗号</label>
+              <input type="text" class="form-control" name="fonds_number" value="{{ archive.fonds_number or '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">归档年度</label>
+              <input type="number" class="form-control" name="archive_year" value="{{ archive.archive_year or '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">保管期限</label>
+              <select class="form-select" name="retention_period">
+                <option value="">-</option>
+                <option value="永久" {% if archive.retention_period == '永久' %}selected{% endif %}>永久</option>
+                <option value="长期" {% if archive.retention_period == '长期' %}selected{% endif %}>长期</option>
+                <option value="30年" {% if archive.retention_period == '30年' %}selected{% endif %}>30年</option>
+                <option value="短期" {% if archive.retention_period == '短期' %}selected{% endif %}>短期</option>
+                <option value="10年" {% if archive.retention_period == '10年' %}selected{% endif %}>10年</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">分类号</label>
+              <input type="text" class="form-control" name="class_number" value="{{ archive.class_number or '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">件号</label>
+              <input type="number" class="form-control" name="file_number" value="{{ archive.file_number or '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">责任者</label>
+              <input type="text" class="form-control" name="responsible" value="{{ archive.responsible or '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">形成日期</label>
+              <input type="date" class="form-control" name="doc_date" value="{{ archive.doc_date.strftime('%Y-%m-%d') if archive.doc_date else '' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">页数</label>
+              <input type="text" class="form-control" name="pages" value="{{ archive.pages or '' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label">文件题名</label>
+              <textarea class="form-control" name="title" rows="2">{{ archive.title or '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">文件编号</label>
+              <input type="text" class="form-control" name="doc_number" value="{{ archive.doc_number or '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">物理存放位置</label>
+              <input type="text" class="form-control" name="electronic_location" value="{{ archive.electronic_location or '' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label">主题词</label>
+              <input type="text" class="form-control" name="keywords" value="{{ archive.keywords or '' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label">备注</label>
+              <textarea class="form-control" name="remarks" rows="2">{{ archive.remarks or '' }}</textarea>
+            </div>
+          </div>
+          <div class="mt-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>保存</button>
+            <a href="{{ url_for('catalog.detail', archive_id=archive.id) }}" class="btn btn-outline-secondary">取消</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$('#editForm').on('submit', function(e) {
+  e.preventDefault();
+  $.ajax({
+    url: "{{ url_for('catalog.edit', archive_id=archive.id) }}",
+    method: 'POST',
+    data: $(this).serialize(),
+    success: function(resp) {
+      if (resp.success) {
+        alert('保存成功');
+        location.href = "{{ url_for('catalog.detail', archive_id=archive.id) }}";
+      } else {
+        alert('保存失败: ' + (resp.error || '未知错误'));
+      }
+    },
+    error: function(xhr) {
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : '请求失败';
+      alert('保存失败: ' + msg);
+    }
+  });
+});
+</script>
+{% endblock %}

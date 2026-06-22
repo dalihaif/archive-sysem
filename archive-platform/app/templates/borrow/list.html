@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}借阅管理{% endblock %}
+{% block page_title %}借阅管理{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+
+<!-- 顶部统计卡片 -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-warning">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-warning" id="cnt-pending">{{ pending_count }}</div>
+        <small class="text-muted">待审批</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-success">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-success" id="cnt-approved">-</div>
+        <small class="text-muted">借阅中</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-danger">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-danger" id="cnt-overdue">{{ overdue_count }}</div>
+        <small class="text-muted">逾期未还</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-info">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-info" id="cnt-returned">-</div>
+        <small class="text-muted">已归还</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="card mb-3">
+  <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+    <div class="btn-group btn-group-sm" role="group" id="statusFilter">
+      <button class="btn btn-warning active" data-status="">全部</button>
+      <button class="btn btn-outline-warning" data-status="待审批">待审批</button>
+      <button class="btn btn-outline-success" data-status="已通过">借阅中</button>
+      <button class="btn btn-outline-info" data-status="已归还">已归还</button>
+      <button class="btn btn-outline-secondary" data-status="已拒绝">已拒绝</button>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-sm btn-primary" onclick="openCreateModal()">
+        <i class="bi bi-plus-circle me-1"></i>录入申请
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 借阅列表 -->
+<div class="card">
+  <div class="card-body p-0">
+    <table id="borrowTable" class="table table-hover table-sm mb-0" style="width:100%">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>借阅人</th>
+          <th>所在部门</th>
+          <th>借阅档案</th>
+          <th>借阅目的</th>
+          <th>登记日期</th>
+          <th>归还日期</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== 借阅详情 & 审批 Modal ===== -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-book me-2"></i>借阅详情</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="detailBody">
+        <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+      </div>
+      <div class="modal-footer" id="detailFooter"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 录入申请 Modal ===== -->
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>录入借阅申请</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label fw-semibold">借阅人 <span class="text-danger">*</span></label>
+          <input type="text" id="c_borrower" class="form-control form-control-sm" placeholder="姓名">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">所在部门</label>
+          <input type="text" id="c_department" class="form-control form-control-sm" placeholder="科室/部门">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">联系电话</label>
+          <input type="text" id="c_phone" class="form-control form-control-sm" placeholder="手机号">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">档案信息（档号或题名）</label>
+          <input type="text" id="c_archive_ref" class="form-control form-control-sm" placeholder="如：YX-2024-001">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">借阅目的</label>
+          <textarea id="c_purpose" class="form-control form-control-sm" rows="2" placeholder="说明借阅用途..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="submitCreate()">提交申请</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 审批 Modal ===== -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="approveTitle">审批</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="approveDesc" class="text-muted small mb-2"></p>
+        <label class="form-label fw-semibold">审批意见</label>
+        <textarea id="approveComment" class="form-control form-control-sm" rows="3" placeholder="可填写意见..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-sm" id="approveSubmitBtn" onclick="submitApprove()">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+let currentStatus = '';
+let currentApproveId = null;
+let currentApproveAction = null;
+
+const table = $('#borrowTable').DataTable({
+  serverSide: true,
+  processing: true,
+  ajax: {
+    url: '{{ url_for("borrow.api_list") }}',
+    data: d => { d.status = currentStatus; }
+  },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'borrower' },
+    { data: 'borrower_department' },
+    { data: 'archive_ref' },
+    { data: 'purpose' },
+    { data: 'borrow_date' },
+    { data: 'return_date' },
+    { data: 'status', orderable: false },
+    {
+      data: null, orderable: false, width: '150px',
+      render: (d, t, row) => {
+        let btns = `<button class="btn btn-xs btn-outline-primary me-1" onclick="viewDetail(${row.id})"><i class="bi bi-eye"></i></button>`;
+        if (row.status_raw === '待审批') {
+          btns += `<button class="btn btn-xs btn-success me-1" onclick="openApprove(${row.id},'approve','${row.borrower}')"><i class="bi bi-check-lg"></i></button>`;
+          btns += `<button class="btn btn-xs btn-secondary" onclick="openApprove(${row.id},'reject','${row.borrower}')"><i class="bi bi-x-lg"></i></button>`;
+        }
+        if (row.status_raw === '已通过') {
+          btns += `<button class="btn btn-xs btn-info ms-1" onclick="doReturn(${row.id})"><i class="bi bi-arrow-return-left"></i> 归还</button>`;
+        }
+        return btns;
+      }
+    }
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20,
+  order: [[0, 'desc']],
+  drawCallback: function(s) {
+    // 更新计数
+    fetch('{{ url_for("borrow.api_list") }}?status=已通过&start=0&length=1')
+      .then(r=>r.json()).then(d=>{ document.getElementById('cnt-approved').textContent = d.recordsTotal; });
+    fetch('{{ url_for("borrow.api_list") }}?status=已归还&start=0&length=1')
+      .then(r=>r.json()).then(d=>{ document.getElementById('cnt-returned').textContent = d.recordsTotal; });
+  }
+});
+
+// 状态筛选按钮
+document.getElementById('statusFilter').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-status]');
+  if (!btn) return;
+  document.querySelectorAll('#statusFilter button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentStatus = btn.dataset.status;
+  table.ajax.reload();
+});
+
+// 查看详情
+function viewDetail(id) {
+  const modal = new bootstrap.Modal('#detailModal');
+  document.getElementById('detailBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+  document.getElementById('detailFooter').innerHTML = '';
+  modal.show();
+  fetch(`{{ url_for("borrow.api_list") | replace('/api/list','') }}/api/${id}`)
+    .then(r => r.json())
+    .then(b => {
+      document.getElementById('detailBody').innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-6">
+            <table class="table table-sm table-borderless mb-0">
+              <tr><th class="text-muted" width="90">借阅人</th><td>${b.borrower}</td></tr>
+              <tr><th class="text-muted">部门</th><td>${b.borrower_department||'—'}</td></tr>
+              <tr><th class="text-muted">联系电话</th><td>${b.borrower_phone||'—'}</td></tr>
+              <tr><th class="text-muted">登记日期</th><td>${b.borrow_date||'—'}</td></tr>
+              <tr><th class="text-muted">归还日期</th><td>${b.return_date||'—'}</td></tr>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <table class="table table-sm table-borderless mb-0">
+              <tr><th class="text-muted" width="90">借阅档案</th><td>${b.archive_ref||'—'}</td></tr>
+              <tr><th class="text-muted">借阅目的</th><td>${b.purpose||'—'}</td></tr>
+              <tr><th class="text-muted">状态</th><td>${b.status}</td></tr>
+              <tr><th class="text-muted">审批人</th><td>${b.approver||'—'}</td></tr>
+              <tr><th class="text-muted">审批意见</th><td>${b.approve_comment||'—'}</td></tr>
+            </table>
+          </div>
+          ${b.access_code ? `<div class="col-12"><div class="alert alert-success py-2 mb-0"><i class="bi bi-key me-2"></i>访问验证码：<strong class="fs-5 ms-1">${b.access_code}</strong>（移动端查阅电子版使用）</div></div>` : ''}
+        </div>`;
+      // 底部按钮
+      let footer = '';
+      if (b.status === '待审批') {
+        footer = `<button class="btn btn-success btn-sm" onclick="openApprove(${b.id},'approve','${b.borrower}')">通过</button>
+                  <button class="btn btn-secondary btn-sm ms-2" onclick="openApprove(${b.id},'reject','${b.borrower}')">拒绝</button>`;
+      }
+      if (b.status === '已通过') {
+        footer = `<button class="btn btn-info btn-sm" onclick="doReturn(${b.id})"><i class="bi bi-arrow-return-left me-1"></i>确认归还</button>`;
+      }
+      document.getElementById('detailFooter').innerHTML = footer + `<button class="btn btn-outline-secondary btn-sm ms-2" data-bs-dismiss="modal">关闭</button>`;
+    });
+}
+
+// 打开审批弹窗
+function openApprove(id, action, name) {
+  currentApproveId = id;
+  currentApproveAction = action;
+  document.getElementById('approveTitle').textContent = action === 'approve' ? '通过审批' : '拒绝申请';
+  document.getElementById('approveDesc').textContent = `借阅人：${name}`;
+  document.getElementById('approveComment').value = '';
+  const btn = document.getElementById('approveSubmitBtn');
+  btn.textContent = action === 'approve' ? '确认通过' : '确认拒绝';
+  btn.className = action === 'approve' ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
+  // 关闭详情弹窗（如果开着）
+  const dm = bootstrap.Modal.getInstance(document.getElementById('detailModal'));
+  if (dm) dm.hide();
+  new bootstrap.Modal('#approveModal').show();
+}
+
+function submitApprove() {
+  fetch(`{{ url_for("borrow.api_list") | replace('/api/list','') }}/api/${currentApproveId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: currentApproveAction, comment: document.getElementById('approveComment').value })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('approveModal')).hide();
+      table.ajax.reload();
+      if (d.access_code) alert(`审批通过！访问验证码：${d.access_code}`);
+    } else { alert(d.msg); }
+  });
+}
+
+function doReturn(id) {
+  if (!confirm('确认该档案已归还？')) return;
+  fetch(`{{ url_for("borrow.api_list") | replace('/api/list','') }}/api/${id}/return`, { method: 'POST' })
+    .then(r => r.json()).then(d => {
+      if (d.ok) { table.ajax.reload(); }
+      else { alert(d.msg); }
+    });
+}
+
+function openCreateModal() {
+  ['c_borrower','c_department','c_phone','c_archive_ref','c_purpose'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  new bootstrap.Modal('#createModal').show();
+}
+
+function submitCreate() {
+  const data = {
+    borrower: document.getElementById('c_borrower').value.trim(),
+    borrower_department: document.getElementById('c_department').value.trim(),
+    borrower_phone: document.getElementById('c_phone').value.trim(),
+    archive_ref: document.getElementById('c_archive_ref').value.trim(),
+    purpose: document.getElementById('c_purpose').value.trim(),
+  };
+  if (!data.borrower) { alert('借阅人不能为空'); return; }
+  fetch('{{ url_for("borrow.api_create") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+      table.ajax.reload();
+    } else { alert(d.msg); }
+  });
+}
+</script>
+{% endblock %}

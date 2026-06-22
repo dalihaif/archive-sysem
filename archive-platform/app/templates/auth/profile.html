@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}个人设置{% endblock %}
+{% block page_title %}个人设置{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-person-badge me-2"></i>账户信息</div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <tr><th width="100">用户名</th><td>{{ current_user.username }}</td></tr>
+          <tr><th>姓名</th><td>{{ current_user.real_name or '-' }}</td></tr>
+          <tr><th>部门</th><td>{{ current_user.department or '-' }}</td></tr>
+          <tr><th>角色</th><td><span class="badge bg-secondary">{{ current_user.role }}</span></td></tr>
+          <tr><th>手机</th><td>{{ current_user.phone or '-' }}</td></tr>
+          <tr><th>最后登录</th><td>{{ current_user.last_login.strftime('%Y-%m-%d %H:%M') if current_user.last_login else '-' }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

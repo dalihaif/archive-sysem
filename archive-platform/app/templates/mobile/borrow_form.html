@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>借阅登记 - 档案管理平台</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #f5f6fa; min-height: 100vh; }
+    .mobile-header { background: linear-gradient(135deg, #1a365d, #2d5a87); color: #fff; padding: 24px 20px; text-align: center; }
+    .mobile-header .bi { font-size: 2.2rem; }
+    .form-card { max-width: 480px; margin: -24px auto 24px; border-radius: 16px 16px 0 0; border: none; box-shadow: 0 -4px 20px rgba(0,0,0,0.08); }
+    .btn-primary { background: #1a365d; border-color: #1a365d; }
+  </style>
+</head>
+<body>
+  <div class="mobile-header">
+    <i class="bi bi-archive"></i>
+    <h5 class="mt-2 mb-0">档案借阅登记</h5>
+    <small class="opacity-75">大理大学第一附属医院</small>
+  </div>
+
+  <div class="card form-card mx-3">
+    <div class="card-body p-4">
+      <form id="borrowForm">
+        <div class="mb-3">
+          <label class="form-label fw-bold"><i class="bi bi-person me-1"></i>姓名 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-lg" name="borrower" placeholder="请输入您的姓名" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold"><i class="bi bi-building me-1"></i>部门</label>
+          <input type="text" class="form-control form-control-lg" name="department" placeholder="请输入所在科室/部门">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold"><i class="bi bi-phone me-1"></i>手机号 <span class="text-danger">*</span></label>
+          <input type="tel" class="form-control form-control-lg" name="phone" placeholder="用于接收审批通知" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold"><i class="bi bi-file-text me-1"></i>查阅档号/文件题名 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-lg" name="archive_ref" placeholder="请输入需要借阅的档案档号或文件名" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold"><i class="bi bi-tag me-1"></i>借阅目的</label>
+          <select class="form-select form-select-lg" name="purpose">
+            <option value="">请选择</option>
+            <option>工作参考</option>
+            <option>学术研究</option>
+            <option>学习培训</option>
+            <option>临床参考</option>
+            <option>其他</option>
+          </select>
+        </div>
+        <div class="mb-4">
+          <label class="form-label fw-bold"><i class="bi bi-pencil me-1"></i>备注</label>
+          <textarea class="form-control" name="remarks" rows="2" placeholder="选填"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+          <i class="bi bi-send me-1"></i> 提交借阅申请
+        </button>
+      </form>
+
+      <hr class="my-4">
+      <div class="text-center">
+        <small class="text-muted">
+          已有审批结果？<a href="/m/my-borrows" class="ms-1">查看我的借阅</a>
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('borrowForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      alert('借阅申请已提交，请等待管理员审批。审批结果将通过手机号通知您。');
+    });
+  </script>
+</body>
+</html>

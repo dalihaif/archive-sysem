@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}工作台{% endblock %}
+{% block page_title %}工作台{% endblock %}
+
+{% block head_extra %}
+<style>
+  .stat-card { transition: transform 0.2s; }
+  .stat-card:hover { transform: translateY(-3px); }
+  .stat-card .stat-icon { font-size: 2rem; opacity: 0.85; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card bg-primary bg-opacity-10 border-primary h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-journal-text text-primary stat-icon"></i>
+        <h3 class="mt-2 mb-0 fw-bold" id="totalArchives">-</h3>
+        <small class="text-muted">档案总量</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card bg-success bg-opacity-10 border-success h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-send text-success stat-icon"></i>
+        <h3 class="mt-2 mb-0 fw-bold" id="totalTransfers">-</h3>
+        <small class="text-muted">移交记录</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card bg-warning bg-opacity-10 border-warning h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-book text-warning stat-icon"></i>
+        <h3 class="mt-2 mb-0 fw-bold" id="totalBorrows">-</h3>
+        <small class="text-muted">借阅中</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card bg-info bg-opacity-10 border-info h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-check-circle text-info stat-icon"></i>
+        <h3 class="mt-2 mb-0 fw-bold" id="totalRegulations">-</h3>
+        <small class="text-muted">法规制度</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- 各类档案统计 -->
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header bg-white"><i class="bi bi-bar-chart me-2"></i>档案类别分布</div>
+      <div class="card-body">
+        <canvas id="categoryChart" height="280"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷操作 -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header bg-white"><i class="bi bi-lightning me-2"></i>快捷操作</div>
+      <div class="card-body">
+        <div class="d-grid gap-2">
+          <a href="{{ url_for('catalog.list') }}" class="btn btn-outline-primary btn-lg text-start">
+            <i class="bi bi-search me-2"></i>检索档案
+          </a>
+          <a href="{{ url_for('import_data.index') }}" class="btn btn-outline-success btn-lg text-start">
+            <i class="bi bi-upload me-2"></i>导入数据
+          </a>
+          <a href="{{ url_for('borrow.list') }}" class="btn btn-outline-warning btn-lg text-start">
+            <i class="bi bi-book me-2"></i>借阅管理
+          </a>
+          <a href="{{ url_for('transfer.list') }}" class="btn btn-outline-info btn-lg text-start">
+            <i class="bi bi-send me-2"></i>移交管理
+          </a>
+          <a href="{{ url_for('mobile.borrow_form') }}" target="_blank" class="btn btn-outline-secondary btn-lg text-start">
+            <i class="bi bi-qr-code me-2"></i>移动借阅页
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 保管期限分布 + 最近操作 -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header bg-white"><i class="bi bi-clock-history me-2"></i>保管期限分布</div>
+      <div class="card-body">
+        <canvas id="retentionChart" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock me-2"></i>最近操作</span>
+        <a href="#" class="btn btn-sm btn-link">查看全部</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush" id="recentOps">
+          <div class="list-group-item text-center py-4 text-muted">
+            <i class="bi bi-hourglass-split fs-1"></i>
+            <p class="mb-0 mt-2 small">加载中...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 从 API 加载仪表盘数据
+fetch('{{ url_for("stats.api_dashboard") }}')
+  .then(r => r.json())
+  .then(data => {
+    // 更新数字卡片
+    document.getElementById('totalArchives').textContent = (data.total || 0).toLocaleString();
+    document.getElementById('totalTransfers').textContent = (data.transfers || 0).toLocaleString();
+    document.getElementById('totalBorrows').textContent = (data.active_borrows || 0).toLocaleString();
+    document.getElementById('totalRegulations').textContent = (data.regulations || 0).toLocaleString();
+
+    // 类别分布图
+    const catLabels = Object.keys(data.by_category || {});
+    const catData = Object.values(data.by_category || {});
+    const catColors = ['#0d6efd', '#198754', '#fd7e14', '#dc3545', '#6f42c1'];
+
+    new Chart(document.getElementById('categoryChart'), {
+      type: 'doughnut',
+      data: {
+        labels: catLabels.length ? catLabels : ['无数据'],
+        datasets: [{
+          data: catData.length ? catData : [1],
+          backgroundColor: catColors.slice(0, Math.max(catLabels.length, 1)),
+          borderWidth: 2,
+          borderColor: '#fff',
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right' },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) { return ctx.label + ': ' + ctx.parsed.toLocaleString() + ' 条'; }
+            }
+          }
+        }
+      }
+    });
+
+    // 保管期限分布图
+    const retLabels = Object.keys(data.by_retention || {});
+    const retData = Object.values(data.by_retention || {});
+
+    new Chart(document.getElementById('retentionChart'), {
+      type: 'bar',
+      data: {
+        labels: retLabels.length ? retLabels : ['无数据'],
+        datasets: [{
+          label: '档案数量',
+          data: retData.length ? retData : [0],
+          backgroundColor: ['#198754','#0d6efd','#0dcaf0','#ffc107','#fd7e14','#dc3545'].slice(0, Math.max(retLabels.length, 1)),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        indexAxis: retLabels.length > 5 ? 'y' : 'x',
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    // 最近操作
+    const opsList = document.getElementById('recentOps');
+    if (data.recent_ops && data.recent_ops.length > 0) {
+      opsList.innerHTML = data.recent_ops.map(op =>
+        `<div class="list-group-item d-flex justify-content-between align-items-center py-2">
+          <div><i class="bi bi-${op.icon || 'circle'} me-2 text-${op.color || 'secondary'}"></i>${op.detail}</div>
+          <small class="text-muted">${op.time}</small>
+        </div>`
+      ).join('');
+    } else {
+      opsList.innerHTML = '<div class="list-group-item text-center py-4 text-muted"><p class="mb-0 small">暂无操作记录</p></div>';
+    }
+  })
+  .catch(err => {
+    console.error('加载统计数据失败:', err);
+    document.getElementById('totalArchives').textContent = '?';
+  });
+</script>
+{% endblock %}

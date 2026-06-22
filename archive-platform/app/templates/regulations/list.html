@@ -1,0 +1,197 @@
+﻿{% extends "base.html" %}
+{% block title %}法规制度{% endblock %}
+{% block page_title %}法规制度{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+    <select id="filterCategory" class="form-select form-select-sm" style="width:140px">
+      <option value="">全部分类</option>
+      {% for cat in categories %}<option>{{ cat }}</option>{% endfor %}
+    </select>
+    <div class="ms-auto">
+      {% if current_user.can_edit() %}
+      <button class="btn btn-sm btn-primary" onclick="openSaveModal()">
+        <i class="bi bi-plus-circle me-1"></i>添加法规
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-body p-0">
+    <table id="regTable" class="table table-hover table-sm mb-0" style="width:100%">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th><th>名称</th><th>文号/标准号</th><th>发布日期</th>
+          <th>分类</th><th>来源</th><th>核心要点（摘要）</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="detailTitle"><i class="bi bi-bookmark-check me-2"></i>法规详情</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-footer" id="detailFooter">
+      <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="saveModal" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="saveTitle">添加法规</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="s_id">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label fw-semibold">法规名称 <span class="text-danger">*</span></label>
+          <input type="text" id="s_title" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">文号/标准号</label>
+          <input type="text" id="s_doc_number" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">发布日期</label>
+          <input type="date" id="s_date" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">分类</label>
+          <input type="text" id="s_category" class="form-control form-control-sm" placeholder="如：档案法规、会计档案">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">来源</label>
+          <select id="s_source" class="form-select form-select-sm">
+            <option value="手动添加">手动添加</option><option value="内置">内置</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">原文链接（可选）</label>
+          <input type="text" id="s_url" class="form-control form-control-sm" placeholder="https://...">
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">核心要点</label>
+          <textarea id="s_content" class="form-control form-control-sm" rows="5"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="submitSave()">保存</button>
+    </div>
+  </div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+const table = $('#regTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: { url: '{{ url_for("regulations.api_list") }}', data: d => { d.category = document.getElementById('filterCategory').value; } },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'title' },
+    { data: 'doc_number' },
+    { data: 'publish_date' },
+    { data: 'category' },
+    { data: 'source', orderable: false },
+    { data: 'content_snippet', orderable: false },
+    { data: null, orderable: false, width: '120px', render: (d,t,row) => {
+        let b = `<button class="btn btn-xs btn-outline-primary me-1" onclick="viewDetail(${row.id})"><i class="bi bi-eye"></i></button>`;
+        {% if current_user.can_edit() %} b += `<button class="btn btn-xs btn-outline-secondary me-1" onclick="openEdit(${row.id})"><i class="bi bi-pencil"></i></button>`; {% endif %}
+        {% if current_user.is_admin() %} b += `<button class="btn btn-xs btn-outline-danger" onclick="doDelete(${row.id})"><i class="bi bi-trash"></i></button>`; {% endif %}
+        return b;
+    }}
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20, order: [[3,'desc']]
+});
+document.getElementById('filterCategory').addEventListener('change', () => table.ajax.reload());
+
+function viewDetail(id) {
+  const modal = new bootstrap.Modal('#detailModal');
+  document.getElementById('detailBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+  document.getElementById('detailFooter').innerHTML = '<button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">关闭</button>';
+  modal.show();
+  fetch(`/regulations/api/${id}`).then(r=>r.json()).then(reg=>{
+    document.getElementById('detailTitle').textContent = reg.title;
+    document.getElementById('detailBody').innerHTML = `
+      <div class="row g-2 mb-3">
+        <div class="col-3 text-muted">文号</div><div class="col-9">${reg.doc_number||'—'}</div>
+        <div class="col-3 text-muted">发布日期</div><div class="col-9">${reg.publish_date||'—'}</div>
+        <div class="col-3 text-muted">分类</div><div class="col-9">${reg.category||'—'}</div>
+        <div class="col-3 text-muted">来源</div><div class="col-9">${reg.source||'—'}</div>
+        ${reg.source_url?`<div class="col-3 text-muted">原文</div><div class="col-9"><a href="${reg.source_url}" target="_blank">${reg.source_url}</a></div>`:''}
+      </div><hr>
+      <h6 class="text-muted mb-2">核心要点</h6>
+      <p style="white-space:pre-wrap">${reg.content||'暂无内容'}</p>`;
+    {% if current_user.can_edit() %}
+    document.getElementById('detailFooter').innerHTML = `<button class="btn btn-outline-primary btn-sm" onclick="openEdit(${reg.id})">编辑</button><button class="btn btn-outline-secondary btn-sm ms-2" data-bs-dismiss="modal">关闭</button>`;
+    {% endif %}
+  });
+}
+
+function openSaveModal() {
+  document.getElementById('saveTitle').textContent = '添加法规';
+  document.getElementById('s_id').value = '';
+  ['s_title','s_doc_number','s_date','s_category','s_url','s_content'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('s_source').value = '手动添加';
+  new bootstrap.Modal('#saveModal').show();
+}
+
+function openEdit(id) {
+  const dm = bootstrap.Modal.getInstance(document.getElementById('detailModal'));
+  if (dm) dm.hide();
+  fetch(`/regulations/api/${id}`).then(r=>r.json()).then(reg=>{
+    document.getElementById('s_id').value = reg.id;
+    document.getElementById('s_title').value = reg.title;
+    document.getElementById('s_doc_number').value = reg.doc_number;
+    document.getElementById('s_date').value = reg.publish_date;
+    document.getElementById('s_category').value = reg.category;
+    document.getElementById('s_source').value = reg.source||'手动添加';
+    document.getElementById('s_url').value = reg.source_url;
+    document.getElementById('s_content').value = reg.content;
+    document.getElementById('saveTitle').textContent = '编辑法规';
+    new bootstrap.Modal('#saveModal').show();
+  });
+}
+
+function submitSave() {
+  const data = {
+    id: document.getElementById('s_id').value||null,
+    title: document.getElementById('s_title').value.trim(),
+    doc_number: document.getElementById('s_doc_number').value.trim(),
+    publish_date: document.getElementById('s_date').value,
+    category: document.getElementById('s_category').value.trim(),
+    source: document.getElementById('s_source').value,
+    source_url: document.getElementById('s_url').value.trim(),
+    content: document.getElementById('s_content').value.trim(),
+  };
+  if (!data.title) { alert('名称不能为空'); return; }
+  fetch('/regulations/api/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) })
+    .then(r=>r.json()).then(d=>{ if(d.ok){bootstrap.Modal.getInstance(document.getElementById('saveModal')).hide();table.ajax.reload();}else alert(d.msg); });
+}
+
+function doDelete(id) {
+  if (!confirm('确认删除该法规？')) return;
+  fetch(`/regulations/api/${id}/delete`, {method:'POST'}).then(r=>r.json()).then(d=>{ if(d.ok)table.ajax.reload();else alert(d.msg); });
+}
+</script>
+{% endblock %}

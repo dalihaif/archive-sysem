@@ -1,0 +1,414 @@
+﻿{% extends "base.html" %}
+{% block title %}档案总库{% endblock %}
+{% block page_title %}档案总库{% endblock %}
+
+{% block head_extra %}
+<link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css" rel="stylesheet">
+<style>
+  .filter-bar { background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .filter-bar .form-select, .filter-bar .form-control { font-size: 0.9rem; }
+  .archive-title { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
+  .badge-category { font-size: 0.75rem; }
+  .badge-period-永久, .badge-period-长期 { background: #d4edda; color: #155724; }
+  .badge-period-30年 { background: #d1ecf1; color: #0c5460; }
+  .badge-period-短期 { background: #fff3cd; color: #856404; }
+  .badge-period-10年 { background: #fce4d6; color: #8b4513; }
+  .has-electronic { color: #198754; }
+  .no-electronic { color: #ccc; }
+  .stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat-card { flex: 1; min-width: 140px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 16px; text-align: center; }
+  .stat-card .stat-num { font-size: 1.6rem; font-weight: 700; color: #1a365d; }
+  .stat-card .stat-label { font-size: 0.8rem; color: #6c757d; }
+  #archiveTable_wrapper .dataTables_filter input { margin-left: 8px; }
+  /* 批量操作栏 */
+  #batchBar { display: none; background: #fff3cd; border-radius: 6px; padding: 8px 16px; margin-bottom: 12px; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #batchBar.show { display: flex; }
+  #archiveTable th.select-col, #archiveTable td.select-col { width: 36px; padding-left: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">档案总量</div></div>
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">文书档案</div></div>
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">设备档案</div></div>
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">有电子版</div></div>
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">已上链</div></div>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar">
+  <form id="filterForm" class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label small mb-1">档案类别</label>
+      <select class="form-select form-select-sm" id="filterCategory" name="category">
+        <option value="">全部类别</option>
+        <option value="文书">文书档案</option>
+        <option value="设备">设备档案</option>
+        <option value="科研">科研档案</option>
+        <option value="基建">基建档案</option>
+        <option value="会计">会计档案</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1">归档年度</label>
+      <select class="form-select form-select-sm" id="filterYear" name="archive_year">
+        <option value="">全部年度</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1">保管期限</label>
+      <select class="form-select form-select-sm" id="filterPeriod" name="retention_period">
+        <option value="">全部期限</option>
+        <option value="永久">永久</option>
+        <option value="长期">长期</option>
+        <option value="30年">30年</option>
+        <option value="短期">短期</option>
+        <option value="10年">10年</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>筛选</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resetFilters()"><i class="bi bi-x-circle me-1"></i>重置</button>
+    </div>
+    <div class="col-md-4 text-end d-flex gap-2 justify-content-end">
+      {% if current_user.can_edit() %}
+      <div class="dropdown">
+        <button class="btn btn-outline-success btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+          <i class="bi bi-download me-1"></i>导出
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li>
+            <a class="dropdown-item" href="#" onclick="exportData(); return false;">
+              <i class="bi bi-file-earmark-excel me-2 text-success"></i>导出当前数据（Excel）
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" href="{{ url_for('catalog.export_template') }}">
+              <i class="bi bi-file-earmark-arrow-down me-2 text-primary"></i>下载导入模板
+            </a>
+          </li>
+        </ul>
+      </div>
+      {% endif %}
+      <a href="{{ url_for('import_data.index') }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-upload me-1"></i>导入数据
+      </a>
+    </div>
+  </form>
+</div>
+
+<!-- 批量操作栏 -->
+<div id="batchBar">
+  <i class="bi bi-check2-square text-warning fs-5"></i>
+  <span>已选择 <strong id="selectedCount">0</strong> 条档案</span>
+  <button class="btn btn-sm btn-outline-secondary ms-2" onclick="clearSelection()">
+    <i class="bi bi-x me-1"></i>取消选择
+  </button>
+  <button class="btn btn-sm btn-warning" onclick="openBatchModal()" data-bs-toggle="tooltip" title="批量修改选中档案的字段">
+    <i class="bi bi-pencil-square me-1"></i>批量修改
+  </button>
+</div>
+
+<!-- 数据表格 -->
+<div class="card">
+  <div class="card-body p-2">
+    <table id="archiveTable" class="table table-striped table-hover table-sm" style="width:100%">
+      <thead class="table-light">
+        <tr>
+          <th class="select-col"><input type="checkbox" id="selectAll" title="全选/取消全选"></th>
+          <th width="50">#</th>
+          <th width="60">类别</th>
+          <th width="120">档号</th>
+          <th>文件题名</th>
+          <th width="70">年度</th>
+          <th width="70">保管期限</th>
+          <th width="80">责任者</th>
+          <th width="90">形成日期</th>
+          <th width="50">电子</th>
+          <th width="50">链</th>
+          <th width="60">操作</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+</div>
+
+<!-- 批量修改 Modal -->
+<div class="modal fade" id="batchModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>批量修改</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          将对选中的 <strong id="batchCount">0</strong> 条档案进行修改，<strong>空白字段不会修改</strong>，请谨慎操作。
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">档案类别</label>
+            <select id="b_category" class="form-select form-select-sm">
+              <option value="">— 不修改 —</option>
+              <option>文书</option><option>基建</option><option>科研</option>
+              <option>设备</option><option>会计</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">保管期限</label>
+            <select id="b_retention_period" class="form-select form-select-sm">
+              <option value="">— 不修改 —</option>
+              <option>永久</option><option>长期</option><option>30年</option>
+              <option>短期</option><option>10年</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">归档年度</label>
+            <input type="number" id="b_archive_year" class="form-control form-control-sm"
+              placeholder="留空则不修改" min="1990" max="2099">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">责任者</label>
+            <input type="text" id="b_responsible" class="form-control form-control-sm"
+              placeholder="留空则不修改">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">全宗号</label>
+            <input type="text" id="b_fonds_number" class="form-control form-control-sm"
+              placeholder="留空则不修改">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">电子版位置</label>
+            <input type="text" id="b_electronic_location" class="form-control form-control-sm"
+              placeholder="留空则不修改">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-warning btn-sm" onclick="submitBatch()">
+          <i class="bi bi-check-lg me-1"></i>确认修改
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<script>
+var selectedIds = new Set();
+
+$(function() {
+  var table = $('#archiveTable').DataTable({
+    serverSide: true,
+    processing: true,
+    ajax: {
+      url: "{{ url_for('catalog.api_list') }}",
+      data: function(d) {
+        d.category = $('#filterCategory').val();
+        d.archive_year = $('#filterYear').val();
+        d.retention_period = $('#filterPeriod').val();
+      }
+    },
+    columns: [
+      { data: 'id', orderable: false, searchable: false, className: 'select-col',
+        render: function(d) {
+          var checked = selectedIds.has(d) ? 'checked' : '';
+          return '<input type="checkbox" class="row-check" data-id="' + d + '" ' + checked + '>';
+        }
+      },
+      { data: 'id' },
+      { data: 'category', render: function(d) {
+        return '<span class="badge bg-secondary badge-category">' + d + '</span>';
+      }},
+      { data: 'archive_number' },
+      { data: 'title', render: function(d) {
+        return '<span class="archive-title" title="' + (d||'') + '">' + (d||'') + '</span>';
+      }},
+      { data: 'archive_year' },
+      { data: 'retention_period', render: function(d) {
+        var cls = 'badge-period-' + d;
+        return '<span class="badge ' + cls + '">' + (d||'') + '</span>';
+      }},
+      { data: 'responsible' },
+      { data: 'doc_date' },
+      { data: 'has_electronic', orderable: false, render: function(d) {
+        return d ? '<i class="bi bi-file-pdf has-electronic" title="有电子版"></i>'
+                 : '<i class="bi bi-file-earmark no-electronic" title="无电子版"></i>';
+      }},
+      { data: 'bc_hash', orderable: false, render: function(d) {
+        return d ? '<i class="bi bi-shield-check text-success" title="已上链"></i>'
+                 : '<i class="bi bi-shield text-muted" title="未上链"></i>';
+      }},
+      { data: 'id', orderable: false, searchable: false, render: function(d) {
+        return '<a href="{{ url_for("catalog.detail", archive_id=999) }}'.replace('999', d) +
+               '" class="btn btn-outline-primary btn-xs"><i class="bi bi-eye"></i></a>';
+      }}
+    ],
+    language: {
+      url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/zh-HANS.json'
+    },
+    pageLength: 50,
+    lengthMenu: [[20, 50, 100, 200], [20, 50, 100, 200]],
+    order: [[1, 'desc']],
+    drawCallback: function() {
+      // 恢复勾选状态
+      $('.row-check').each(function() {
+        var id = parseInt($(this).data('id'));
+        if (selectedIds.has(id)) $(this).prop('checked', true);
+      });
+      updateSelectAll();
+    }
+  });
+
+  // 行勾选
+  $('#archiveTable').on('change', '.row-check', function() {
+    var id = parseInt($(this).data('id'));
+    if ($(this).is(':checked')) selectedIds.add(id);
+    else selectedIds.delete(id);
+    updateBatchBar();
+    updateSelectAll();
+  });
+
+  // 全选当前页
+  $('#selectAll').on('change', function() {
+    var checked = $(this).is(':checked');
+    $('.row-check').each(function() {
+      var id = parseInt($(this).data('id'));
+      $(this).prop('checked', checked);
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+    });
+    updateBatchBar();
+  });
+
+  // 筛选提交
+  $('#filterForm').on('submit', function(e) {
+    e.preventDefault();
+    table.ajax.reload();
+    loadStats();
+  });
+
+  function loadStats() {
+    $.get("{{ url_for('catalog.api_stats') }}", function(resp) {
+      $('#statsBar').html(
+        '<div class="stat-card"><div class="stat-num">' + resp.total + '</div><div class="stat-label">档案总量</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='文书'}) || {count:0}).count + '</div><div class="stat-label">文书档案</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='设备'}) || {count:0}).count + '</div><div class="stat-label">设备档案</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + resp.with_electronic + '</div><div class="stat-label">有电子版</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + resp.with_blockchain + '</div><div class="stat-label">已上链</div></div>'
+      );
+      var yearSel = $('#filterYear');
+      var cur = yearSel.val();
+      yearSel.empty().append('<option value="">全部年度</option>');
+      resp.years.forEach(function(y) {
+        yearSel.append('<option value="' + y.year + '">' + y.year + ' (' + y.count + ')</option>');
+      });
+      yearSel.val(cur);
+    });
+  }
+
+  loadStats();
+  $('[data-bs-toggle="tooltip"]').tooltip();
+});
+
+function updateBatchBar() {
+  var count = selectedIds.size;
+  if (count > 0) {
+    $('#batchBar').addClass('show');
+    $('#selectedCount').text(count);
+  } else {
+    $('#batchBar').removeClass('show');
+  }
+}
+
+function updateSelectAll() {
+  var total = $('.row-check').length;
+  var checked = $('.row-check:checked').length;
+  $('#selectAll').prop('indeterminate', checked > 0 && checked < total);
+  $('#selectAll').prop('checked', total > 0 && checked === total);
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  $('.row-check').prop('checked', false);
+  $('#selectAll').prop('checked', false).prop('indeterminate', false);
+  updateBatchBar();
+}
+
+function resetFilters() {
+  $('#filterCategory').val('');
+  $('#filterYear').val('');
+  $('#filterPeriod').val('');
+  $('#archiveTable').DataTable().ajax.reload();
+}
+
+// ── 批量修改 ──
+function openBatchModal() {
+  if (selectedIds.size === 0) { alert('请先勾选要修改的档案'); return; }
+  $('#batchCount').text(selectedIds.size);
+  ['b_category','b_retention_period','b_responsible','b_fonds_number','b_electronic_location'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('b_archive_year').value = '';
+  new bootstrap.Modal('#batchModal').show();
+}
+
+function submitBatch() {
+  var payload = {
+    ids: Array.from(selectedIds),
+    category: document.getElementById('b_category').value || null,
+    retention_period: document.getElementById('b_retention_period').value || null,
+    archive_year: document.getElementById('b_archive_year').value || null,
+    responsible: document.getElementById('b_responsible').value.trim() || null,
+    fonds_number: document.getElementById('b_fonds_number').value.trim() || null,
+    electronic_location: document.getElementById('b_electronic_location').value.trim() || null,
+  };
+
+  // 过滤掉 null
+  Object.keys(payload).forEach(function(k) {
+    if (k !== 'ids' && payload[k] === null) delete payload[k];
+  });
+
+  fetch("{{ url_for('catalog.api_batch_update') }}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('batchModal')).hide();
+      clearSelection();
+      $('#archiveTable').DataTable().ajax.reload();
+      alert('批量修改成功，共更新 ' + d.affected + ' 条档案');
+    } else {
+      alert('修改失败：' + d.msg);
+    }
+  });
+}
+
+// ── 导出数据 ──
+function exportData() {
+  var params = new URLSearchParams({
+    category: document.getElementById('filterCategory').value,
+    archive_year: document.getElementById('filterYear').value,
+    retention_period: document.getElementById('filterPeriod').value,
+  });
+  // 如果有 DataTables 搜索词
+  var dtSearch = $('#archiveTable').DataTable().search();
+  if (dtSearch) params.set('q', dtSearch);
+
+  var label = document.getElementById('filterCategory').value || '全部';
+  var confirmMsg = '确认导出当前筛选结果（类别：' + label + '）为 Excel 文件？';
+  if (!confirm(confirmMsg)) return;
+
+  window.location.href = "{{ url_for('catalog.export_data') }}?" + params.toString();
+}
+</script>
+{% endblock %}

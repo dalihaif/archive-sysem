@@ -1,0 +1,179 @@
+﻿{% extends "base.html" %}
+{% block title %}检索查询{% endblock %}
+{% block page_title %}检索查询{% endblock %}
+
+{% block head_extra %}
+<style>
+  mark { background: #fff176; padding: 0 2px; border-radius: 2px; }
+  .result-item { transition: box-shadow .15s; }
+  .result-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+  .badge-electronic { background: #d1fae5; color: #065f46; font-size:.7rem; }
+  .badge-chain { background: #dbeafe; color: #1e40af; font-size:.7rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 搜索框 -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-5">
+        <label class="form-label fw-semibold">关键词</label>
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+          <input type="text" id="searchQ" class="form-control" placeholder="档号、题名、责任者、主题词..." autofocus>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">档案类别</label>
+        <select id="searchCategory" class="form-select">
+          <option value="">全部</option>
+          <option>文书</option><option>基建</option><option>科研</option><option>设备</option><option>会计</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">归档年度</label>
+        <select id="searchYear" class="form-select">
+          <option value="">全部年份</option>
+          {% for y in range(2024, 2000, -1) %}<option>{{ y }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">保管期限</label>
+        <select id="searchPeriod" class="form-select">
+          <option value="">全部</option>
+          <option>永久</option><option>30年</option><option>10年</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-1 d-grid">
+        <button class="btn btn-primary" onclick="doSearch(1)">
+          <i class="bi bi-search me-1"></i>搜索
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 搜索结果 -->
+<div id="resultSummary" class="text-muted small mb-3" style="display:none"></div>
+<div id="resultContainer"></div>
+
+<!-- 分页 -->
+<nav id="paginationNav" style="display:none">
+  <ul class="pagination pagination-sm justify-content-center" id="pagination"></ul>
+</nav>
+
+<div id="emptyState" class="text-center py-5 text-muted" style="display:none">
+  <i class="bi bi-search fs-1 d-block mb-3 opacity-25"></i>
+  <p>未找到匹配的档案记录</p>
+  <small>尝试使用更宽泛的关键词或调整筛选条件</small>
+</div>
+
+<div id="initState" class="text-center py-5 text-muted">
+  <i class="bi bi-archive fs-1 d-block mb-3 opacity-25"></i>
+  <p class="fs-5">在上方输入关键词开始检索</p>
+  <small>支持档号、文件题名、责任者、主题词等字段的全文检索</small>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let currentQ = '';
+let totalPages = 1;
+
+// 回车触发搜索
+document.getElementById('searchQ').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch(1);
+});
+
+function doSearch(page) {
+  const q = document.getElementById('searchQ').value.trim();
+  const category = document.getElementById('searchCategory').value;
+  const year = document.getElementById('searchYear').value;
+  const period = document.getElementById('searchPeriod').value;
+
+  if (!q && !category && !year) {
+    document.getElementById('initState').style.display = '';
+    document.getElementById('resultContainer').innerHTML = '';
+    document.getElementById('resultSummary').style.display = 'none';
+    document.getElementById('paginationNav').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('initState').style.display = 'none';
+  document.getElementById('resultContainer').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">检索中...</p></div>';
+
+  currentQ = q;
+  const params = new URLSearchParams({ q, category, year, period, page, per_page: 20 });
+
+  fetch(`{{ url_for("search.api_search") }}?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) { alert('检索出错'); return; }
+
+      document.getElementById('emptyState').style.display = data.total === 0 ? '' : 'none';
+      document.getElementById('resultContainer').style.display = data.total === 0 ? 'none' : '';
+
+      if (data.total > 0) {
+        totalPages = data.pages;
+        currentPage = data.page;
+
+        document.getElementById('resultSummary').style.display = '';
+        document.getElementById('resultSummary').innerHTML =
+          `共找到 <strong>${data.total.toLocaleString()}</strong> 条档案记录` +
+          (q ? `，关键词：<span class="badge bg-light text-dark border ms-1">${q}</span>` : '') +
+          `，当前第 ${data.page}/${data.pages} 页`;
+
+        renderResults(data.results);
+        renderPagination(data.page, data.pages);
+      } else {
+        document.getElementById('resultSummary').style.display = 'none';
+        document.getElementById('paginationNav').style.display = 'none';
+        document.getElementById('resultContainer').innerHTML = '';
+      }
+    });
+}
+
+function renderResults(results) {
+  const html = results.map(r => `
+    <div class="card mb-2 result-item">
+      <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-start gap-2">
+          <span class="badge bg-secondary flex-shrink-0">${r.category}</span>
+          <a href="/catalog/${r.id}" class="fw-semibold text-primary text-decoration-none flex-grow-1" target="_blank">
+            ${r.title || '（无题名）'}
+          </a>
+          ${r.has_electronic ? '<span class="badge badge-electronic px-2 py-1"><i class="bi bi-file-earmark-text me-1"></i>电子版</span>' : ''}
+          ${r.has_blockchain ? '<span class="badge badge-chain px-2 py-1"><i class="bi bi-shield-check me-1"></i>已上链</span>' : ''}
+        </div>
+        <div class="row g-0 mt-1 text-muted small">
+          <div class="col-auto me-3"><i class="bi bi-hash me-1"></i>${r.archive_number||'—'}</div>
+          <div class="col-auto me-3"><i class="bi bi-person me-1"></i>${r.responsible||'—'}</div>
+          <div class="col-auto me-3"><i class="bi bi-calendar me-1"></i>${r.archive_year||'—'}年</div>
+          <div class="col-auto me-3"><i class="bi bi-clock me-1"></i>${r.retention_period||'—'}</div>
+          <div class="col-auto me-3"><i class="bi bi-file-text me-1"></i>${r.pages||'—'}页</div>
+          ${r.keywords ? `<div class="col-auto"><i class="bi bi-tag me-1"></i>${r.keywords}</div>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+  document.getElementById('resultContainer').innerHTML = html || '';
+}
+
+function renderPagination(page, pages) {
+  if (pages <= 1) { document.getElementById('paginationNav').style.display = 'none'; return; }
+  document.getElementById('paginationNav').style.display = '';
+  const ul = document.getElementById('pagination');
+  let html = `<li class="page-item${page<=1?' disabled':''}"><a class="page-link" href="#" onclick="doSearch(${page-1})">«</a></li>`;
+  const start = Math.max(1, page-3), end = Math.min(pages, page+3);
+  if (start > 1) html += `<li class="page-item"><a class="page-link" href="#" onclick="doSearch(1)">1</a></li><li class="page-item disabled"><span class="page-link">…</span></li>`;
+  for (let i=start; i<=end; i++) {
+    html += `<li class="page-item${i===page?' active':''}"><a class="page-link" href="#" onclick="doSearch(${i})">${i}</a></li>`;
+  }
+  if (end < pages) html += `<li class="page-item disabled"><span class="page-link">…</span></li><li class="page-item"><a class="page-link" href="#" onclick="doSearch(${pages})">${pages}</a></li>`;
+  html += `<li class="page-item${page>=pages?' disabled':''}"><a class="page-link" href="#" onclick="doSearch(${page+1})">»</a></li>`;
+  ul.innerHTML = html;
+}
+</script>
+{% endblock %}

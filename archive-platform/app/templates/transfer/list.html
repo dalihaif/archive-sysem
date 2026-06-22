@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}移交管理{% endblock %}
+{% block page_title %}移交管理{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-primary">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-primary">{{ total }}</div>
+        <small class="text-muted">移交总记录</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-success">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-success">{{ this_year }}</div>
+        <small class="text-muted">本年移交</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-warning">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-warning" id="cnt-pending">-</div>
+        <small class="text-muted">待接收</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-info">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-info" id="cnt-inprogress">-</div>
+        <small class="text-muted">进行中</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="card mb-3">
+  <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+    <select id="filterCategory" class="form-select form-select-sm" style="width:120px">
+      <option value="">全部类别</option>
+      <option>文书</option><option>基建</option><option>科研</option><option>设备</option><option>会计</option>
+    </select>
+    <select id="filterYear" class="form-select form-select-sm" style="width:100px">
+      <option value="">全部年份</option>
+      {% for y in range(2024, 2015, -1) %}<option>{{ y }}</option>{% endfor %}
+    </select>
+    <div class="ms-auto">
+      <button class="btn btn-sm btn-primary" onclick="openCreateModal()">
+        <i class="bi bi-plus-circle me-1"></i>新建移交
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 列表 -->
+<div class="card">
+  <div class="card-body p-0">
+    <table id="transferTable" class="table table-hover table-sm mb-0" style="width:100%">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>移交日期</th>
+          <th>移交部门</th>
+          <th>移交人</th>
+          <th>接收部门</th>
+          <th>接收人</th>
+          <th>档案类别</th>
+          <th>数量(件)</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 详情 Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-send me-2"></i>移交详情</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="detailBody"></div>
+      <div class="modal-footer" id="detailFooter">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建 Modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>新建移交记录</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">移交日期</label>
+            <input type="date" id="c_date" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">档案类别</label>
+            <select id="c_type" class="form-select form-select-sm">
+              <option>文书</option><option>基建</option><option>科研</option><option>设备</option><option>会计</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">移交部门 <span class="text-danger">*</span></label>
+            <input type="text" id="c_from_dept" class="form-control form-control-sm" placeholder="如：内科一病区">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">移交人</label>
+            <input type="text" id="c_from_person" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">接收部门</label>
+            <input type="text" id="c_to_dept" class="form-control form-control-sm" placeholder="如：档案室">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">接收人</label>
+            <input type="text" id="c_to_person" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">移交数量（件）</label>
+            <input type="number" id="c_qty" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">起止件号</label>
+            <input type="text" id="c_start_number" class="form-control form-control-sm" placeholder="如：001-050">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">状态</label>
+            <select id="c_status" class="form-select form-select-sm">
+              <option>待接收</option><option>进行中</option><option>已完成</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">备注</label>
+            <textarea id="c_remarks" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="submitCreate()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+const table = $('#transferTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: {
+    url: '{{ url_for("transfer.api_list") }}',
+    data: d => {
+      d.category = document.getElementById('filterCategory').value;
+      d.year = document.getElementById('filterYear').value;
+    }
+  },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'transfer_date' },
+    { data: 'from_department' },
+    { data: 'from_person' },
+    { data: 'to_department' },
+    { data: 'to_person' },
+    { data: 'transfer_type' },
+    { data: 'quantity' },
+    { data: 'status', orderable: false },
+    {
+      data: null, orderable: false, width: '120px',
+      render: (d, t, row) => {
+        let btns = `<button class="btn btn-xs btn-outline-primary me-1" onclick="viewDetail(${row.id})"><i class="bi bi-eye"></i></button>`;
+        if (row.status_raw !== '已完成') {
+          btns += `<button class="btn btn-xs btn-success" onclick="markDone(${row.id})"><i class="bi bi-check-lg"></i> 完成</button>`;
+        }
+        return btns;
+      }
+    }
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20, order: [[0, 'desc']],
+  drawCallback: () => {
+    fetch('{{ url_for("transfer.api_list") }}?status=待接收&start=0&length=1')
+      .then(r=>r.json()).then(d=>document.getElementById('cnt-pending').textContent=d.recordsTotal);
+    fetch('{{ url_for("transfer.api_list") }}?status=进行中&start=0&length=1')
+      .then(r=>r.json()).then(d=>document.getElementById('cnt-inprogress').textContent=d.recordsTotal);
+  }
+});
+
+['filterCategory','filterYear'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => table.ajax.reload());
+});
+
+function viewDetail(id) {
+  const modal = new bootstrap.Modal('#detailModal');
+  document.getElementById('detailBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+  modal.show();
+  fetch(`{{ url_for("transfer.api_list") | replace('/api/list','') }}/api/${id}`)
+    .then(r=>r.json()).then(t=>{
+      document.getElementById('detailBody').innerHTML = `
+        <div class="row g-2">
+          <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
+            <tr><th class="text-muted" width="90">移交日期</th><td>${t.transfer_date}</td></tr>
+            <tr><th class="text-muted">移交部门</th><td>${t.from_department}</td></tr>
+            <tr><th class="text-muted">移交人</th><td>${t.from_person||'—'}</td></tr>
+            <tr><th class="text-muted">接收部门</th><td>${t.to_department||'—'}</td></tr>
+            <tr><th class="text-muted">接收人</th><td>${t.to_person||'—'}</td></tr>
+          </table></div>
+          <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
+            <tr><th class="text-muted" width="90">档案类别</th><td>${t.transfer_type||'—'}</td></tr>
+            <tr><th class="text-muted">移交数量</th><td>${t.quantity} 件</td></tr>
+            <tr><th class="text-muted">起止件号</th><td>${t.start_number||'—'}</td></tr>
+            <tr><th class="text-muted">状态</th><td>${t.status}</td></tr>
+            <tr><th class="text-muted">备注</th><td>${t.remarks||'—'}</td></tr>
+          </table></div>
+        </div>`;
+      let footer = '';
+      if (t.status !== '已完成') {
+        footer = `<button class="btn btn-success btn-sm" onclick="markDone(${t.id})">标记完成</button>`;
+      }
+      document.getElementById('detailFooter').innerHTML = footer + `<button class="btn btn-outline-secondary btn-sm ms-2" data-bs-dismiss="modal">关闭</button>`;
+    });
+}
+
+function markDone(id) {
+  if (!confirm('确认标记为"已完成"？')) return;
+  fetch(`{{ url_for("transfer.api_list") | replace('/api/list','') }}/api/${id}/status`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status:'已完成'})
+  }).then(r=>r.json()).then(d=>{ if(d.ok) table.ajax.reload(); else alert(d.msg); });
+}
+
+function openCreateModal() {
+  document.getElementById('c_date').value = new Date().toISOString().split('T')[0];
+  ['c_from_dept','c_from_person','c_to_dept','c_to_person','c_start_number','c_remarks'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('c_qty').value = 0;
+  new bootstrap.Modal('#createModal').show();
+}
+
+function submitCreate() {
+  const data = {
+    transfer_date: document.getElementById('c_date').value,
+    transfer_type: document.getElementById('c_type').value,
+    from_department: document.getElementById('c_from_dept').value.trim(),
+    from_person: document.getElementById('c_from_person').value.trim(),
+    to_department: document.getElementById('c_to_dept').value.trim(),
+    to_person: document.getElementById('c_to_person').value.trim(),
+    quantity: parseInt(document.getElementById('c_qty').value)||0,
+    start_number: document.getElementById('c_start_number').value.trim(),
+    status: document.getElementById('c_status').value,
+    remarks: document.getElementById('c_remarks').value.trim(),
+  };
+  if (!data.from_department) { alert('移交部门不能为空'); return; }
+  fetch('{{ url_for("transfer.api_create") }}', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  }).then(r=>r.json()).then(d=>{
+    if (d.ok) { bootstrap.Modal.getInstance(document.getElementById('createModal')).hide(); table.ajax.reload(); }
+    else alert(d.msg);
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}销毁鉴定{% endblock %}
+{% block page_title %}销毁鉴定{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-danger">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-danger">{{ overdue_10 }}</div>
+        <small class="text-muted">10年期到期</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-warning">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-warning">{{ overdue_30 }}</div>
+        <small class="text-muted">30年期到期</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-primary">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-primary">{{ total_dest }}</div>
+        <small class="text-muted">鉴定记录总数</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-success">
+      <div class="card-body py-2 text-center">
+        <div class="fs-3 fw-bold text-success" id="cnt-destroy">-</div>
+        <small class="text-muted">已鉴定销毁</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-0" id="destroyTabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overdue">
+      <i class="bi bi-exclamation-triangle text-danger me-1"></i>到期预警
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-records">
+      <i class="bi bi-clipboard-check me-1"></i>鉴定记录
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <!-- 到期预警 -->
+  <div class="tab-pane fade show active" id="tab-overdue">
+    <div class="card rounded-top-0">
+      <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center border-bottom">
+        <div class="btn-group btn-group-sm" id="periodFilter">
+          <button class="btn btn-outline-secondary active" data-period="">全部到期</button>
+          <button class="btn btn-outline-danger" data-period="10年">10年期</button>
+          <button class="btn btn-outline-warning" data-period="30年">30年期</button>
+        </div>
+        <div class="ms-auto d-flex gap-2">
+          <button class="btn btn-sm btn-danger" onclick="openBatchModal()">
+            <i class="bi bi-trash me-1"></i>批量鉴定
+          </button>
+          <button class="btn btn-sm btn-outline-primary" onclick="openCreateModal()">
+            <i class="bi bi-plus-circle me-1"></i>新建鉴定
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <table id="overdueTable" class="table table-hover table-sm mb-0" style="width:100%">
+          <thead class="table-light">
+            <tr>
+              <th><input type="checkbox" id="selectAll" onchange="toggleAll(this)"></th>
+              <th>档号</th>
+              <th>类别</th>
+              <th>文件题名</th>
+              <th>归档年度</th>
+              <th>保管期限</th>
+              <th>到期年份</th>
+              <th>已逾期(年)</th>
+              <th>页数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 鉴定记录 -->
+  <div class="tab-pane fade" id="tab-records">
+    <div class="card rounded-top-0">
+      <div class="card-body p-0">
+        <table id="recordsTable" class="table table-hover table-sm mb-0" style="width:100%">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>鉴定日期</th>
+              <th>档号/分类</th>
+              <th>文件题名</th>
+              <th>保管期限</th>
+              <th>已保管(年)</th>
+              <th>鉴定意见</th>
+              <th>批准人</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 批量鉴定 Modal -->
+<div class="modal fade" id="batchModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-trash me-2"></i>批量鉴定</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle me-2"></i>已勾选 <strong id="selectedCount">0</strong> 条档案进行鉴定</div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">鉴定意见</label>
+          <select id="b_opinion" class="form-select form-select-sm">
+            <option value="销毁">销毁</option>
+            <option value="保留">保留</option>
+            <option value="延期复查">延期复查</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">批准人</label>
+          <input type="text" id="b_approver" class="form-control form-control-sm" placeholder="批准人姓名">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">备注</label>
+          <textarea id="b_remarks" class="form-control form-control-sm" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-danger btn-sm" onclick="submitBatch()">确认鉴定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建鉴定 Modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>新建鉴定记录</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">鉴定日期</label>
+            <input type="date" id="c_date" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">保管期限</label>
+            <select id="c_period" class="form-select form-select-sm">
+              <option>10年</option><option>30年</option><option>永久</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">档号/分类</label>
+            <input type="text" id="c_ref" class="form-control form-control-sm">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">文件题名</label>
+            <input type="text" id="c_title" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">已保管(年)</label>
+            <input type="number" id="c_years" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">鉴定意见</label>
+            <select id="c_opinion" class="form-select form-select-sm">
+              <option value="销毁">销毁</option>
+              <option value="保留">保留</option>
+              <option value="延期复查">延期复查</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">批准人</label>
+            <input type="text" id="c_approver" class="form-control form-control-sm">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">备注</label>
+            <textarea id="c_remarks" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="submitCreate()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+let currentPeriod = '';
+let selectedIds = new Set();
+
+const overdueTable = $('#overdueTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: { url: '{{ url_for("destroy.api_overdue") }}', data: d => { d.period = currentPeriod; } },
+  columns: [
+    { data: null, orderable: false, render: (d,t,row) => `<input type="checkbox" class="row-check" value="${row.id}" onchange="toggleRow(this)">` },
+    { data: 'archive_number' },
+    { data: 'category' },
+    { data: 'title' },
+    { data: 'archive_year' },
+    { data: 'retention_period' },
+    { data: 'expire_year' },
+    { data: 'overdue_years', render: v => `<span class="text-danger fw-semibold">${v}</span>` },
+    { data: 'pages' },
+    { data: null, orderable: false, render: (d,t,row) => `<button class="btn btn-xs btn-warning" onclick="singleAppraise(${row.id},'${row.archive_number}')"><i class="bi bi-clipboard-check"></i> 鉴定</button>` }
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20, order: [[5,'asc']]
+});
+
+const recordsTable = $('#recordsTable').DataTable({
+  serverSide: true, processing: true,
+  ajax: { url: '{{ url_for("destroy.api_records") }}' },
+  columns: [
+    { data: 'id', width: '50px' },
+    { data: 'appraisal_date' },
+    { data: 'archive_ref' },
+    { data: 'title_ref' },
+    { data: 'retention_period' },
+    { data: 'years_kept' },
+    { data: 'opinion', orderable: false },
+    { data: 'approver_name' },
+    { data: 'remarks' },
+  ],
+  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  pageLength: 20, order: [[0,'desc']],
+  drawCallback: () => {
+    fetch('{{ url_for("destroy.api_records") }}?search[value]=销毁&start=0&length=1')
+      .then(r=>r.json()).then(d=>document.getElementById('cnt-destroy').textContent=d.recordsTotal);
+  }
+});
+
+document.getElementById('periodFilter').addEventListener('click', e => {
+  const btn = e.target.closest('[data-period]');
+  if (!btn) return;
+  document.querySelectorAll('#periodFilter button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPeriod = btn.dataset.period;
+  overdueTable.ajax.reload();
+});
+
+function toggleAll(cb) {
+  document.querySelectorAll('.row-check').forEach(c => {
+    c.checked = cb.checked;
+    cb.checked ? selectedIds.add(parseInt(c.value)) : selectedIds.delete(parseInt(c.value));
+  });
+}
+function toggleRow(cb) {
+  cb.checked ? selectedIds.add(parseInt(cb.value)) : selectedIds.delete(parseInt(cb.value));
+}
+
+function openBatchModal() {
+  if (selectedIds.size === 0) { alert('请先勾选档案'); return; }
+  document.getElementById('selectedCount').textContent = selectedIds.size;
+  document.getElementById('b_approver').value = '';
+  document.getElementById('b_remarks').value = '';
+  new bootstrap.Modal('#batchModal').show();
+}
+
+function submitBatch() {
+  const data = {
+    archive_ids: [...selectedIds],
+    opinion: document.getElementById('b_opinion').value,
+    approver_name: document.getElementById('b_approver').value,
+    remarks: document.getElementById('b_remarks').value,
+  };
+  fetch('{{ url_for("destroy.api_batch_appraise") }}', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+  }).then(r=>r.json()).then(d=>{
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('batchModal')).hide();
+      selectedIds.clear();
+      overdueTable.ajax.reload();
+      recordsTable.ajax.reload();
+      alert(`已成功鉴定 ${d.created} 条档案`);
+    } else alert(d.msg);
+  });
+}
+
+function singleAppraise(id, ref) {
+  selectedIds.clear();
+  selectedIds.add(id);
+  document.getElementById('selectedCount').textContent = 1;
+  document.getElementById('b_approver').value = '';
+  document.getElementById('b_remarks').value = ref;
+  new bootstrap.Modal('#batchModal').show();
+}
+
+function openCreateModal() {
+  document.getElementById('c_date').value = new Date().toISOString().split('T')[0];
+  ['c_ref','c_title','c_approver','c_remarks'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('c_years').value = 0;
+  new bootstrap.Modal('#createModal').show();
+}
+
+function submitCreate() {
+  const data = {
+    appraisal_date: document.getElementById('c_date').value,
+    retention_period: document.getElementById('c_period').value,
+    archive_ref: document.getElementById('c_ref').value.trim(),
+    title_ref: document.getElementById('c_title').value.trim(),
+    years_kept: parseInt(document.getElementById('c_years').value)||0,
+    opinion: document.getElementById('c_opinion').value,
+    approver_name: document.getElementById('c_approver').value.trim(),
+    remarks: document.getElementById('c_remarks').value.trim(),
+  };
+  fetch('{{ url_for("destroy.api_create") }}', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
+  }).then(r=>r.json()).then(d=>{
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+      recordsTable.ajax.reload();
+    } else alert(d.msg);
+  });
+}
+</script>
+{% endblock %}

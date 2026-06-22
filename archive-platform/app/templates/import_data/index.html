@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}数据导入{% endblock %}
+{% block page_title %}数据导入{% endblock %}
+
+{% block head_extra %}
+<style>
+  .upload-zone {
+    border: 2px dashed #ccc;
+    border-radius: 12px;
+    padding: 48px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: #fafafa;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: #1a365d;
+    background: #f0f4ff;
+  }
+  .upload-zone .bi { font-size: 3rem; color: #1a365d; }
+  .preview-table { max-height: 500px; overflow-y: auto; }
+  .batch-history { font-size: 0.85rem; }
+  .result-badge { font-size: 1.1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- 上传区 -->
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-file-earmark-excel me-2"></i>Excel 批量导入</div>
+      <div class="card-body">
+        <!-- 上传区域 -->
+        <div id="uploadZone" class="upload-zone mb-3" onclick="document.getElementById('fileInput').click()">
+          <i class="bi bi-cloud-upload"></i>
+          <h5 class="mt-2">点击选择或拖放 Excel 文件到此处</h5>
+          <p class="text-muted small">支持 .xlsx / .xls 格式，自动识别档案类别</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+        </div>
+
+        <!-- 进度条 -->
+        <div id="progressArea" style="display:none;">
+          <div class="d-flex align-items-center mb-2">
+            <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+            <span id="progressText">正在解析文件...</span>
+          </div>
+          <div class="progress" style="height:6px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+          </div>
+        </div>
+
+        <!-- 预览区 -->
+        <div id="previewArea" style="display:none;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span><strong id="previewCount"></strong> 条记录（显示前100条预览）</span>
+            <div>
+              <button class="btn btn-outline-secondary btn-sm" onclick="resetUpload()"><i class="bi bi-x-circle me-1"></i>取消</button>
+              <button class="btn btn-success btn-sm" id="confirmBtn" onclick="confirmImport()"><i class="bi bi-check-circle me-1"></i>确认导入</button>
+            </div>
+          </div>
+          <div class="preview-table">
+            <table class="table table-sm table-striped" id="previewTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 结果区 -->
+        <div id="resultArea" style="display:none;">
+          <div class="text-center py-4" id="resultContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 侧边：导入说明 + 批量导入 -->
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-info-circle me-2"></i>导入说明</div>
+      <div class="card-body small">
+        <ul class="mb-0">
+          <li>支持文书/基建/科研/设备/会计五类档案</li>
+          <li class="text-success fw-bold">增量导入：按"档号+类别"去重</li>
+          <li>自动计算 SHA-256 + MD5 哈希</li>
+          <li>每 500 条自动提交，避免超时</li>
+          <li>已有电子版请单独上传</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-database me-2"></i>现有数据</div>
+      <div class="card-body p-2" id="dbStats">
+        <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>
+      </div>
+    </div>
+
+    {% if current_user.is_admin() %}
+    <div class="card">
+      <div class="card-header"><i class="bi bi-lightning me-2"></i>管理员工具</div>
+      <div class="card-body">
+        <button class="btn btn-warning btn-sm w-100" onclick="directImport()">
+          <i class="bi bi-play-circle me-1"></i>一键导入workspace所有档案文件
+        </button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var uploadedFilepath = '';
+
+$(function() {
+  // 拖放支持
+  var zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    var files = e.dataTransfer.files;
+    if (files.length > 0) handleFile(files[0]);
+  });
+
+  // 文件选择
+  $('#fileInput').on('change', function() {
+    if (this.files.length > 0) handleFile(this.files[0]);
+  });
+
+  // 加载状态
+  $.get("{{ url_for('catalog.api_stats') }}", function(resp) {
+    var html = '<div class="list-group list-group-flush">';
+    html += '<div class="list-group-item py-1 small d-flex justify-content-between"><span>总记录</span><strong>' + resp.total + '</strong></div>';
+    if (resp.categories) {
+      resp.categories.forEach(function(c) {
+        html += '<div class="list-group-item py-1 small d-flex justify-content-between"><span>' + c.name + '档案</span><span>' + c.count + '</span></div>';
+      });
+    }
+    html += '<div class="list-group-item py-1 small d-flex justify-content-between"><span>有电子版</span><span>' + resp.with_electronic + '</span></div>';
+    html += '<div class="list-group-item py-1 small d-flex justify-content-between"><span>已上链</span><span>' + resp.with_blockchain + '</span></div>';
+    html += '</div>';
+    $('#dbStats').html(html);
+  });
+});
+
+function handleFile(file) {
+  $('#uploadZone').hide();
+  $('#progressArea').show();
+  $('#progressText').text('正在解析: ' + file.name);
+
+  var formData = new FormData();
+  formData.append('file', file);
+
+  $.ajax({
+    url: "{{ url_for('import_data.upload') }}",
+    method: 'POST',
+    data: formData,
+    processData: false,
+    contentType: false,
+    success: function(resp) {
+      $('#progressArea').hide();
+      if (resp.success) {
+        uploadedFilepath = resp.filepath;
+        $('#previewCount').text('共 ' + resp.total + ' 条记录');
+
+        // 渲染预览表头
+        var preview = resp.preview;
+        var thead = '<tr>';
+        var fields = ['archive_number', 'title', 'archive_year', 'retention_period', 'responsible', 'doc_date'];
+        var labels = {'archive_number':'档号','title':'文件题名','archive_year':'年度','retention_period':'期限','responsible':'责任者','doc_date':'日期'};
+        fields.forEach(function(f) { thead += '<th>' + (labels[f]||f) + '</th>'; });
+        $('#previewTable thead').html(thead);
+
+        var tbody = '';
+        preview.forEach(function(row) {
+          tbody += '<tr>';
+          fields.forEach(function(f) { tbody += '<td>' + (row[f] || '') + '</td>'; });
+          tbody += '</tr>';
+        });
+        $('#previewTable tbody').html(tbody);
+        $('#previewArea').show();
+      }
+    },
+    error: function(xhr) {
+      $('#progressArea').hide();
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : '上传失败';
+      showResult(false, msg);
+    }
+  });
+}
+
+function confirmImport() {
+  if (!uploadedFilepath) return;
+  $('#confirmBtn').prop('disabled', true).html('<i class="bi bi-hourglass me-1"></i>导入中...');
+  $('#previewArea').hide();
+  $('#progressArea').show();
+  $('#progressText').text('正在导入数据库...');
+
+  $.ajax({
+    url: "{{ url_for('import_data.confirm') }}",
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({filepath: uploadedFilepath}),
+    success: function(resp) {
+      $('#progressArea').hide();
+      if (resp.success) {
+        showResult(true,
+          '<i class="bi bi-check-circle text-success result-badge"></i>' +
+          '<h5 class="mt-2">导入完成</h5>' +
+          '<p>成功导入 <strong>' + resp.imported + '</strong> 条，跳过 <strong>' + resp.skipped + '</strong> 条（已存在）</p>'
+        );
+      } else {
+        showResult(false, '导入失败: ' + (resp.error || '未知错误'));
+      }
+    },
+    error: function(xhr) {
+      $('#progressArea').hide();
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : '请求失败';
+      showResult(false, msg);
+    }
+  });
+}
+
+function resetUpload() {
+  uploadedFilepath = '';
+  $('#previewArea').hide();
+  $('#resultArea').hide();
+  $('#uploadZone').show();
+}
+
+function showResult(success, html) {
+  $('#resultContent').html(html);
+  $('#resultArea').show();
+}
+
+function directImport() {
+  if (!confirm('确认一键导入workspace中的所有档案Excel文件？\n（文书/基建/科研/设备/会计，自动去重）')) return;
+  $('#resultArea').show();
+  $('#resultContent').html('<div class="spinner-border text-primary"></div><p class="mt-2">正在批量导入，请稍候...</p>');
+
+  $.ajax({
+    url: "{{ url_for('import_data.direct_import') }}",
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({}),
+    success: function(resp) {
+      if (resp.success) {
+        var html = '<i class="bi bi-check-circle text-success result-badge"></i><h5 class="mt-2">批量导入完成</h5>';
+        html += '<div class="text-start mt-2">';
+        resp.results.forEach(function(r) {
+          if (r.error) {
+            html += '<div class="text-danger small">' + r.file + ': ' + r.error + '</div>';
+          } else {
+            html += '<div class="small">' + r.file + ': 导入 ' + r.imported + ' 条，跳过 ' + r.skipped + ' 条</div>';
+          }
+        });
+        html += '</div>';
+        html += '<p class="mt-2">共导入 <strong>' + resp.total_imported + '</strong> 条</p>';
+        $('#resultContent').html(html);
+      } else {
+        $('#resultContent').html('<p class="text-danger">导入失败</p>');
+      }
+    },
+    error: function() {
+      $('#resultContent').html('<p class="text-danger">请求失败</p>');
+    }
+  });
+}
+</script>
+{% endblock %}
