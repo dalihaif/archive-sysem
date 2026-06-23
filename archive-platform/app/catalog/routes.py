@@ -182,7 +182,7 @@ def export_data():
     """按当前筛选条件导出档案数据到 Excel"""
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
         return jsonify({"error": "openpyxl 未安装"}), 500
 
@@ -210,13 +210,16 @@ def export_data():
             Archive.keywords.ilike(pattern),
         ))
 
-    rows = query.order_by(Archive.id.asc()).all()
+    # 限制最多导出 5000 条，避免全量导出超时
+    EXPORT_LIMIT = 5000
+    total_count = query.count()
+    rows = query.order_by(Archive.id.asc()).limit(EXPORT_LIMIT).all()
 
     wb = Workbook()
     ws = wb.active
     ws.title = "档案目录"
 
-    # 表头
+    # 表头（保留样式，仅表头行）
     headers = [
         "序号", "档案类别", "全宗号", "档号", "分类号", "案卷号",
         "文件题名", "责任者", "文号", "形成日期", "归档年度",
@@ -226,8 +229,6 @@ def export_data():
     ]
     header_fill = PatternFill("solid", fgColor="1A365D")
     header_font = Font(name="微软雅黑", bold=True, color="FFFFFF", size=10)
-    thin = Side(style="thin", color="CCCCCC")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for col_idx, h in enumerate(headers, 1):
@@ -235,11 +236,10 @@ def export_data():
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = center
-        cell.border = border
 
     ws.row_dimensions[1].height = 30
 
-    # 数据行
+    # 数据行（只设字体，去掉边框和隔行背景，大幅提速）
     normal_font = Font(name="微软雅黑", size=9)
     for row_idx, a in enumerate(rows, 2):
         row_data = [
@@ -264,20 +264,7 @@ def export_data():
             a.bc_hash or "",
             a.bc_md5 or "",
         ]
-        for col_idx, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = normal_font
-            cell.border = border
-            if col_idx in (1, 4, 10, 11, 12, 13):
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-            else:
-                cell.alignment = Alignment(vertical="center", wrap_text=False)
-
-        # 隔行背景
-        if row_idx % 2 == 0:
-            fill = PatternFill("solid", fgColor="F5F7FA")
-            for col_idx in range(1, len(headers) + 1):
-                ws.cell(row=row_idx, column=col_idx).fill = fill
+        ws.append(row_data)
 
     # 列宽
     col_widths = [6, 8, 8, 18, 8, 8, 45, 12, 18, 12, 8, 8, 6, 20, 20, 30, 12, 20, 40, 35]
@@ -286,6 +273,13 @@ def export_data():
 
     # 冻结首行
     ws.freeze_panes = "A2"
+
+    # 若实际数据超出限制，写入提示行
+    if total_count > EXPORT_LIMIT:
+        tip_row = len(rows) + 2
+        ws.cell(row=tip_row, column=1,
+                value=f"[提示] 共 {total_count} 条，本次仅导出前 {EXPORT_LIMIT} 条。请使用筛选条件缩小范围后再导出。")
+        ws.cell(row=tip_row, column=1).font = Font(color="FF0000", bold=True)
 
     # 输出到内存
     buf = io.BytesIO()
