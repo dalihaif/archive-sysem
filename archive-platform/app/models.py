@@ -153,6 +153,37 @@ class Transfer(db.Model):
 
 
 # ============================================================
+# 移交附件
+# ============================================================
+class TransferAttachment(db.Model):
+    __tablename__ = "transfer_attachments"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    transfer_id = db.Column(db.Integer, db.ForeignKey("transfers.id"), nullable=False, index=True)
+    transfer = db.relationship("Transfer", backref=db.backref("attachments", lazy="dynamic"))
+
+    original_name = db.Column(db.String(255), nullable=False)   # 原始文件名
+    stored_name = db.Column(db.String(255), nullable=False)      # 磁盘存储名（uuid+扩展名）
+    file_size = db.Column(db.Integer, default=0)                 # 字节数
+    mime_type = db.Column(db.String(100), default="")            # MIME类型
+    uploader_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    uploader = db.relationship("User", backref="transfer_attachments")
+    uploaded_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def size_human(self):
+        """返回可读文件大小"""
+        size = self.file_size or 0
+        for unit in ("B", "KB", "MB", "GB"):
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+
+    def __repr__(self):
+        return f"<TransferAttachment {self.id} {self.original_name}>"
+
+
+# ============================================================
 # 借阅管理
 # ============================================================
 class Borrow(db.Model):

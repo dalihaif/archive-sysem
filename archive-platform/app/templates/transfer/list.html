@@ -1,9 +1,31 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}移交管理{% endblock %}
 {% block page_title %}移交管理{% endblock %}
 
 {% block head_extra %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+.upload-drop-zone {
+  border: 2px dashed #ced4da;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  background: #f8f9fa;
+}
+.upload-drop-zone:hover, .upload-drop-zone.dragover {
+  border-color: #0d6efd;
+  background: #e8f0fe;
+}
+.upload-drop-zone .upload-icon { font-size: 2rem; color: #adb5bd; }
+.att-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; background: #f8f9fa; margin-bottom: 6px; }
+.att-item .att-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .875rem; }
+.att-item .att-meta { font-size: .75rem; color: #6c757d; white-space: nowrap; }
+.att-item .att-ext { display: inline-block; width: 32px; height: 32px; line-height: 32px; text-align: center; border-radius: 4px; font-size: .65rem; font-weight: bold; color: #fff; flex-shrink: 0; }
+.upload-list .progress-bar-wrap { background: #e9ecef; border-radius: 4px; height: 4px; margin-top: 4px; overflow: hidden; }
+.upload-list .progress-bar-fill { height: 100%; background: #0d6efd; transition: width .3s; }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -76,6 +98,7 @@
           <th>接收人</th>
           <th>档案类别</th>
           <th>数量(件)</th>
+          <th>附件</th>
           <th>状态</th>
           <th>操作</th>
         </tr>
@@ -110,6 +133,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <!-- 表单字段 -->
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label fw-semibold">移交日期</label>
@@ -156,10 +180,61 @@
             <textarea id="c_remarks" class="form-control form-control-sm" rows="2"></textarea>
           </div>
         </div>
+
+        <!-- 附件上传区 -->
+        <hr class="my-3">
+        <div class="mb-2 d-flex align-items-center justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-paperclip me-1"></i>上传附件</span>
+          <small class="text-muted">支持 PDF/Word/Excel/图片/压缩包，单文件 ≤20MB</small>
+        </div>
+        <div id="createUploadZone" class="upload-drop-zone mb-2">
+          <div class="upload-icon"><i class="bi bi-cloud-upload"></i></div>
+          <div class="mt-1 text-muted small">拖拽文件到此处，或 <span class="text-primary fw-semibold" style="cursor:pointer" onclick="document.getElementById('c_file_input').click()">点击选择文件</span></div>
+          <input type="file" id="c_file_input" multiple style="display:none" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.txt,.zip,.rar,.7z">
+        </div>
+        <div id="createUploadNote" class="text-muted small mb-2" style="display:none">
+          <i class="bi bi-info-circle text-warning me-1"></i>记录保存后附件将自动上传，请先填写移交信息再点击保存。
+        </div>
+        <!-- 待上传文件预览列表（保存前） -->
+        <div id="pendingFileList" class="upload-list"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary btn-sm" onclick="submitCreate()">保存</button>
+        <button class="btn btn-primary btn-sm" id="btnSaveCreate" onclick="submitCreate()">
+          <span id="btnSaveSpinner" class="spinner-border spinner-border-sm me-1 d-none"></span>
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 附件管理 Modal（已有记录上传/查看） -->
+<div class="modal fade" id="attModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-paperclip me-2"></i>附件管理
+          <small class="text-muted ms-2" id="attModalTitle"></small>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- 上传区 -->
+        <div id="attUploadZone" class="upload-drop-zone mb-3">
+          <div class="upload-icon"><i class="bi bi-cloud-upload"></i></div>
+          <div class="mt-1 text-muted small">拖拽文件到此处，或 <span class="text-primary fw-semibold" style="cursor:pointer" onclick="document.getElementById('att_file_input').click()">点击选择文件</span></div>
+          <input type="file" id="att_file_input" multiple style="display:none" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.txt,.zip,.rar,.7z">
+        </div>
+        <!-- 上传进度 -->
+        <div id="attUploadProgress" class="upload-list mb-2"></div>
+        <!-- 已有附件列表 -->
+        <div id="attList">
+          <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-1"></div>加载中…</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
       </div>
     </div>
   </div>
@@ -170,10 +245,25 @@
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
+const BASE = '{{ url_for("transfer.list") }}'.replace(/\/$/, '');
+
+// ── 文件类型颜色 ──
+function extColor(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const map = { pdf:'#e74c3c', doc:'#2980b9', docx:'#2980b9', xls:'#27ae60', xlsx:'#27ae60',
+    ppt:'#e67e22', pptx:'#e67e22', jpg:'#8e44ad', jpeg:'#8e44ad', png:'#8e44ad',
+    gif:'#8e44ad', bmp:'#8e44ad', zip:'#7f8c8d', rar:'#7f8c8d', '7z':'#7f8c8d', txt:'#95a5a6' };
+  return map[ext] || '#6c757d';
+}
+function extLabel(name) {
+  return (name.split('.').pop() || 'FILE').toUpperCase().substring(0, 4);
+}
+
+// ── DataTable ──
 const table = $('#transferTable').DataTable({
   serverSide: true, processing: true,
   ajax: {
-    url: '{{ url_for("transfer.api_list") }}',
+    url: BASE + '/api/list',
     data: d => {
       d.category = document.getElementById('filterCategory').value;
       d.year = document.getElementById('filterYear').value;
@@ -188,13 +278,20 @@ const table = $('#transferTable').DataTable({
     { data: 'to_person' },
     { data: 'transfer_type' },
     { data: 'quantity' },
+    {
+      data: 'att_count', orderable: false, width: '60px',
+      render: (cnt, t, row) => cnt > 0
+        ? `<span class="badge bg-secondary" style="cursor:pointer" onclick="openAttModal(${row.id},'#${row.id}')"><i class="bi bi-paperclip"></i> ${cnt}</span>`
+        : `<span class="text-muted small">—</span>`
+    },
     { data: 'status', orderable: false },
     {
-      data: null, orderable: false, width: '120px',
+      data: null, orderable: false, width: '130px',
       render: (d, t, row) => {
         let btns = `<button class="btn btn-xs btn-outline-primary me-1" onclick="viewDetail(${row.id})"><i class="bi bi-eye"></i></button>`;
+        btns += `<button class="btn btn-xs btn-outline-secondary me-1" title="附件" onclick="openAttModal(${row.id},'#${row.id}')"><i class="bi bi-paperclip"></i></button>`;
         if (row.status_raw !== '已完成') {
-          btns += `<button class="btn btn-xs btn-success" onclick="markDone(${row.id})"><i class="bi bi-check-lg"></i> 完成</button>`;
+          btns += `<button class="btn btn-xs btn-success" onclick="markDone(${row.id})"><i class="bi bi-check-lg"></i></button>`;
         }
         return btns;
       }
@@ -203,9 +300,9 @@ const table = $('#transferTable').DataTable({
   language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
   pageLength: 20, order: [[0, 'desc']],
   drawCallback: () => {
-    fetch('{{ url_for("transfer.api_list") }}?status=待接收&start=0&length=1')
+    fetch(BASE + '/api/list?status=待接收&start=0&length=1')
       .then(r=>r.json()).then(d=>document.getElementById('cnt-pending').textContent=d.recordsTotal);
-    fetch('{{ url_for("transfer.api_list") }}?status=进行中&start=0&length=1')
+    fetch(BASE + '/api/list?status=进行中&start=0&length=1')
       .then(r=>r.json()).then(d=>document.getElementById('cnt-inprogress').textContent=d.recordsTotal);
   }
 });
@@ -214,44 +311,62 @@ const table = $('#transferTable').DataTable({
   document.getElementById(id).addEventListener('change', () => table.ajax.reload());
 });
 
+// ── 详情 ──
 function viewDetail(id) {
   const modal = new bootstrap.Modal('#detailModal');
   document.getElementById('detailBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
   modal.show();
-  fetch(`{{ url_for("transfer.api_list") | replace('/api/list','') }}/api/${id}`)
-    .then(r=>r.json()).then(t=>{
-      document.getElementById('detailBody').innerHTML = `
-        <div class="row g-2">
-          <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
-            <tr><th class="text-muted" width="90">移交日期</th><td>${t.transfer_date}</td></tr>
-            <tr><th class="text-muted">移交部门</th><td>${t.from_department}</td></tr>
-            <tr><th class="text-muted">移交人</th><td>${t.from_person||'—'}</td></tr>
-            <tr><th class="text-muted">接收部门</th><td>${t.to_department||'—'}</td></tr>
-            <tr><th class="text-muted">接收人</th><td>${t.to_person||'—'}</td></tr>
-          </table></div>
-          <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
-            <tr><th class="text-muted" width="90">档案类别</th><td>${t.transfer_type||'—'}</td></tr>
-            <tr><th class="text-muted">移交数量</th><td>${t.quantity} 件</td></tr>
-            <tr><th class="text-muted">起止件号</th><td>${t.start_number||'—'}</td></tr>
-            <tr><th class="text-muted">状态</th><td>${t.status}</td></tr>
-            <tr><th class="text-muted">备注</th><td>${t.remarks||'—'}</td></tr>
-          </table></div>
-        </div>`;
-      let footer = '';
-      if (t.status !== '已完成') {
-        footer = `<button class="btn btn-success btn-sm" onclick="markDone(${t.id})">标记完成</button>`;
-      }
-      document.getElementById('detailFooter').innerHTML = footer + `<button class="btn btn-outline-secondary btn-sm ms-2" data-bs-dismiss="modal">关闭</button>`;
-    });
+  fetch(BASE + `/api/${id}`).then(r=>r.json()).then(t=>{
+    let attHtml = '';
+    if (t.attachments && t.attachments.length > 0) {
+      attHtml = `<hr><div class="fw-semibold mb-2"><i class="bi bi-paperclip me-1"></i>附件（${t.attachments.length}）</div><div class="att-list">`;
+      t.attachments.forEach(a => {
+        attHtml += `
+          <div class="att-item">
+            <span class="att-ext" style="background:${extColor(a.original_name)}">${extLabel(a.original_name)}</span>
+            <span class="att-name" title="${a.original_name}">${a.original_name}</span>
+            <span class="att-meta">${a.file_size}</span>
+            <a href="${BASE}/api/attachments/${a.id}/download" class="btn btn-xs btn-outline-primary ms-1" title="下载"><i class="bi bi-download"></i></a>
+          </div>`;
+      });
+      attHtml += '</div>';
+    }
+    document.getElementById('detailBody').innerHTML = `
+      <div class="row g-2">
+        <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" width="90">移交日期</th><td>${t.transfer_date}</td></tr>
+          <tr><th class="text-muted">移交部门</th><td>${t.from_department}</td></tr>
+          <tr><th class="text-muted">移交人</th><td>${t.from_person||'—'}</td></tr>
+          <tr><th class="text-muted">接收部门</th><td>${t.to_department||'—'}</td></tr>
+          <tr><th class="text-muted">接收人</th><td>${t.to_person||'—'}</td></tr>
+        </table></div>
+        <div class="col-md-6"><table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" width="90">档案类别</th><td>${t.transfer_type||'—'}</td></tr>
+          <tr><th class="text-muted">移交数量</th><td>${t.quantity} 件</td></tr>
+          <tr><th class="text-muted">起止件号</th><td>${t.start_number||'—'}</td></tr>
+          <tr><th class="text-muted">状态</th><td>${t.status}</td></tr>
+          <tr><th class="text-muted">备注</th><td>${t.remarks||'—'}</td></tr>
+        </table></div>
+      </div>
+      ${attHtml}`;
+    let footer = `<button class="btn btn-outline-secondary btn-sm" onclick="openAttModal(${t.id},'#${t.id}')" data-bs-dismiss="modal"><i class="bi bi-paperclip me-1"></i>管理附件</button>`;
+    if (t.status !== '已完成') {
+      footer = `<button class="btn btn-success btn-sm" onclick="markDone(${t.id})">标记完成</button>` + footer;
+    }
+    document.getElementById('detailFooter').innerHTML = footer + `<button class="btn btn-outline-secondary btn-sm ms-2" data-bs-dismiss="modal">关闭</button>`;
+  });
 }
 
 function markDone(id) {
   if (!confirm('确认标记为"已完成"？')) return;
-  fetch(`{{ url_for("transfer.api_list") | replace('/api/list','') }}/api/${id}/status`, {
+  fetch(BASE + `/api/${id}/status`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({status:'已完成'})
   }).then(r=>r.json()).then(d=>{ if(d.ok) table.ajax.reload(); else alert(d.msg); });
 }
+
+// ── 新建Modal ──
+let _pendingFiles = [];
 
 function openCreateModal() {
   document.getElementById('c_date').value = new Date().toISOString().split('T')[0];
@@ -259,10 +374,61 @@ function openCreateModal() {
     document.getElementById(id).value='';
   });
   document.getElementById('c_qty').value = 0;
+  _pendingFiles = [];
+  renderPendingFiles();
+  document.getElementById('createUploadNote').style.display = 'none';
   new bootstrap.Modal('#createModal').show();
 }
 
-function submitCreate() {
+// 拖拽支持（新建Modal）
+const createZone = document.getElementById('createUploadZone');
+['dragenter','dragover'].forEach(e => createZone.addEventListener(e, ev => { ev.preventDefault(); createZone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(e => createZone.addEventListener(e, ev => { ev.preventDefault(); createZone.classList.remove('dragover'); }));
+createZone.addEventListener('drop', ev => {
+  Array.from(ev.dataTransfer.files).forEach(addPendingFile);
+});
+document.getElementById('c_file_input').addEventListener('change', function() {
+  Array.from(this.files).forEach(addPendingFile);
+  this.value = '';
+});
+
+function addPendingFile(file) {
+  // 检查重复
+  if (_pendingFiles.find(f => f.name === file.name && f.size === file.size)) return;
+  _pendingFiles.push(file);
+  renderPendingFiles();
+  if (_pendingFiles.length > 0) document.getElementById('createUploadNote').style.display = 'block';
+}
+
+function removePendingFile(idx) {
+  _pendingFiles.splice(idx, 1);
+  renderPendingFiles();
+  if (_pendingFiles.length === 0) document.getElementById('createUploadNote').style.display = 'none';
+}
+
+function renderPendingFiles() {
+  const el = document.getElementById('pendingFileList');
+  if (_pendingFiles.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = _pendingFiles.map((f, i) => `
+    <div class="att-item" id="pf-${i}">
+      <span class="att-ext" style="background:${extColor(f.name)}">${extLabel(f.name)}</span>
+      <span class="att-name" title="${f.name}">${f.name}</span>
+      <span class="att-meta">${humanSize(f.size)}</span>
+      <button type="button" class="btn btn-xs btn-outline-danger ms-1" onclick="removePendingFile(${i})"><i class="bi bi-x"></i></button>
+    </div>`).join('');
+}
+
+function humanSize(bytes) {
+  const units = ['B','KB','MB','GB'];
+  let s = bytes;
+  for (const u of units) {
+    if (s < 1024) return `${s.toFixed(1)} ${u}`;
+    s /= 1024;
+  }
+  return `${s.toFixed(1)} TB`;
+}
+
+async function submitCreate() {
   const data = {
     transfer_date: document.getElementById('c_date').value,
     transfer_type: document.getElementById('c_type').value,
@@ -276,13 +442,144 @@ function submitCreate() {
     remarks: document.getElementById('c_remarks').value.trim(),
   };
   if (!data.from_department) { alert('移交部门不能为空'); return; }
-  fetch('{{ url_for("transfer.api_create") }}', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(data)
-  }).then(r=>r.json()).then(d=>{
-    if (d.ok) { bootstrap.Modal.getInstance(document.getElementById('createModal')).hide(); table.ajax.reload(); }
-    else alert(d.msg);
+
+  const btn = document.getElementById('btnSaveCreate');
+  const spinner = document.getElementById('btnSaveSpinner');
+  btn.disabled = true;
+  spinner.classList.remove('d-none');
+
+  try {
+    const r = await fetch(BASE + '/api/create', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    if (!d.ok) { alert(d.msg); return; }
+
+    const tid = d.id;
+    // 上传待传文件
+    if (_pendingFiles.length > 0) {
+      for (let i = 0; i < _pendingFiles.length; i++) {
+        const file = _pendingFiles[i];
+        const fd = new FormData();
+        fd.append('file', file);
+        // 更新UI
+        const item = document.getElementById(`pf-${i}`);
+        if (item) {
+          item.querySelector('button')?.remove();
+          item.innerHTML += '<div class="progress-bar-wrap w-100 mt-1"><div class="progress-bar-fill" id="pb-'+i+'" style="width:5%"></div></div>';
+        }
+        try {
+          const ur = await fetch(BASE + `/api/${tid}/attachments/upload`, {method:'POST', body: fd});
+          const ud = await ur.json();
+          if (document.getElementById(`pb-${i}`)) {
+            document.getElementById(`pb-${i}`).style.width = ud.ok ? '100%' : '0%';
+            document.getElementById(`pb-${i}`).style.background = ud.ok ? '#198754' : '#dc3545';
+          }
+          if (!ud.ok) console.warn('附件上传失败：' + ud.msg);
+        } catch(e) { console.warn('附件上传异常', e); }
+      }
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+    table.ajax.reload();
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('d-none');
+  }
+}
+
+// ── 附件管理Modal（已有记录） ──
+let _currentTid = null;
+
+function openAttModal(tid, label) {
+  _currentTid = tid;
+  document.getElementById('attModalTitle').textContent = label || '';
+  document.getElementById('attList').innerHTML = '<div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-1"></div>加载中…</div>';
+  document.getElementById('attUploadProgress').innerHTML = '';
+  new bootstrap.Modal('#attModal').show();
+  loadAttList(tid);
+}
+
+function loadAttList(tid) {
+  fetch(BASE + `/api/${tid}/attachments`).then(r=>r.json()).then(d=>{
+    const el = document.getElementById('attList');
+    if (!d.ok || d.data.length === 0) {
+      el.innerHTML = '<div class="text-center text-muted py-3"><i class="bi bi-inbox fs-4 d-block mb-1"></i>暂无附件</div>';
+      return;
+    }
+    el.innerHTML = d.data.map(a => `
+      <div class="att-item" id="att-item-${a.id}">
+        <span class="att-ext" style="background:${extColor(a.original_name)}">${extLabel(a.original_name)}</span>
+        <div style="flex:1;min-width:0">
+          <div class="att-name" title="${a.original_name}">${a.original_name}</div>
+          <div class="att-meta">${a.file_size} · ${a.uploader} · ${a.uploaded_at}</div>
+        </div>
+        <a href="${BASE}/api/attachments/${a.id}/download" class="btn btn-xs btn-outline-primary" title="下载"><i class="bi bi-download"></i></a>
+        <button class="btn btn-xs btn-outline-danger ms-1" title="删除" onclick="deleteAttachment(${a.id})"><i class="bi bi-trash"></i></button>
+      </div>`).join('');
   });
+}
+
+function deleteAttachment(aid) {
+  if (!confirm('确认删除该附件？此操作不可恢复。')) return;
+  fetch(BASE + `/api/attachments/${aid}/delete`, {method:'POST'})
+    .then(r=>r.json()).then(d=>{
+      if (d.ok) {
+        document.getElementById(`att-item-${aid}`)?.remove();
+        table.ajax.reload();
+        if (document.getElementById('attList').children.length === 0) loadAttList(_currentTid);
+      } else { alert(d.msg); }
+    });
+}
+
+// 拖拽支持（附件Modal）
+const attZone = document.getElementById('attUploadZone');
+['dragenter','dragover'].forEach(e => attZone.addEventListener(e, ev => { ev.preventDefault(); attZone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(e => attZone.addEventListener(e, ev => { ev.preventDefault(); attZone.classList.remove('dragover'); }));
+attZone.addEventListener('drop', ev => {
+  Array.from(ev.dataTransfer.files).forEach(f => uploadAttFile(f));
+});
+document.getElementById('att_file_input').addEventListener('change', function() {
+  Array.from(this.files).forEach(f => uploadAttFile(f));
+  this.value = '';
+});
+
+async function uploadAttFile(file) {
+  if (!_currentTid) return;
+  const pid = 'up-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  const prog = document.getElementById('attUploadProgress');
+  prog.insertAdjacentHTML('beforeend', `
+    <div class="att-item" id="${pid}">
+      <span class="att-ext" style="background:${extColor(file.name)}">${extLabel(file.name)}</span>
+      <div style="flex:1;min-width:0">
+        <div class="att-name">${file.name}</div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" id="${pid}-pb" style="width:5%"></div></div>
+      </div>
+      <span class="att-meta" id="${pid}-status">上传中…</span>
+    </div>`);
+
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const r = await fetch(BASE + `/api/${_currentTid}/attachments/upload`, {method:'POST', body:fd});
+    const d = await r.json();
+    const pb = document.getElementById(`${pid}-pb`);
+    const st = document.getElementById(`${pid}-status`);
+    if (d.ok) {
+      if (pb) { pb.style.width = '100%'; pb.style.background = '#198754'; }
+      if (st) st.textContent = '完成';
+      setTimeout(() => document.getElementById(pid)?.remove(), 1500);
+      loadAttList(_currentTid);
+      table.ajax.reload();
+    } else {
+      if (pb) { pb.style.background = '#dc3545'; pb.style.width = '100%'; }
+      if (st) st.textContent = '失败：' + d.msg;
+    }
+  } catch(e) {
+    const st = document.getElementById(`${pid}-status`);
+    if (st) st.textContent = '网络错误';
+  }
 }
 </script>
 {% endblock %}

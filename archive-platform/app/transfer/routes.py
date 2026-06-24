@@ -1,12 +1,31 @@
+import os
+import uuid
 import datetime
-from flask import render_template, request, jsonify, redirect, url_for, flash
+from flask import render_template, request, jsonify, redirect, url_for, flash, send_from_directory, current_app
 from flask_login import login_required, current_user
 from sqlalchemy import or_
+from werkzeug.utils import secure_filename
 from app.transfer import transfer_bp
-from app.models import Transfer, Archive, OperationLog
+from app.models import Transfer, TransferAttachment, Archive, OperationLog
 from app.extensions import db
 
 CATEGORIES = ["文书", "基建", "科研", "设备", "会计"]
+
+# 允许上传的文件类型
+ALLOWED_EXTENSIONS = {
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "jpg", "jpeg", "png", "gif", "bmp",
+    "txt", "zip", "rar", "7z"
+}
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+
+
+def _upload_dir():
+    return os.path.join(current_app.root_path, "static", "uploads", "transfer")
+
+
+def _allowed(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def _log(action, target_id, detail):
@@ -71,6 +90,7 @@ def api_list():
     }
     data = []
     for t in rows:
+        att_count = t.attachments.count()
         data.append({
             "id": t.id,
             "transfer_date": t.transfer_date.strftime("%Y-%m-%d") if t.transfer_date else "",
@@ -84,6 +104,7 @@ def api_list():
             "status": status_map.get(t.status, t.status or ""),
             "status_raw": t.status or "",
             "remarks": (t.remarks or "")[:30],
+            "att_count": att_count,
         })
 
     return jsonify({"draw": draw, "recordsTotal": total, "recordsFiltered": total, "data": data})
@@ -94,6 +115,16 @@ def api_list():
 @login_required
 def api_detail(tid):
     t = Transfer.query.get_or_404(tid)
+    attachments = []
+    for a in t.attachments.order_by(TransferAttachment.uploaded_at.desc()).all():
+        attachments.append({
+            "id": a.id,
+            "original_name": a.original_name,
+            "file_size": a.size_human(),
+            "mime_type": a.mime_type,
+            "uploader": a.uploader.real_name or a.uploader.username if a.uploader else "未知",
+            "uploaded_at": a.uploaded_at.strftime("%Y-%m-%d %H:%M") if a.uploaded_at else "",
+        })
     return jsonify({
         "id": t.id,
         "transfer_date": t.transfer_date.strftime("%Y-%m-%d") if t.transfer_date else "",
@@ -107,6 +138,7 @@ def api_detail(tid):
         "status": t.status or "",
         "remarks": t.remarks or "",
         "created_at": t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
+        "attachments": attachments,
     })
 
 
@@ -169,7 +201,111 @@ def api_delete(tid):
     if not current_user.is_admin():
         return jsonify({"ok": False, "msg": "需要管理员权限"}), 403
     t = Transfer.query.get_or_404(tid)
+    # 同步删除附件文件
+    for a in t.attachments.all():
+        fpath = os.path.join(_upload_dir(), a.stored_name)
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        db.session.delete(a)
     _log("delete", tid, f"删除移交记录#{tid}")
     db.session.delete(t)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ─── API: 上传附件 ───────────────────────────
+@transfer_bp.route("/api/<int:tid>/attachments/upload", methods=["POST"])
+@login_required
+def api_upload_attachment(tid):
+    if not current_user.can_edit():
+        return jsonify({"ok": False, "msg": "权限不足"}), 403
+    t = Transfer.query.get_or_404(tid)
+
+    if "file" not in request.files:
+        return jsonify({"ok": False, "msg": "未选择文件"})
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"ok": False, "msg": "文件名为空"})
+    if not _allowed(f.filename):
+        return jsonify({"ok": False, "msg": f"不支持的文件类型，允许：{', '.join(sorted(ALLOWED_EXTENSIONS))}"})
+
+    # 检查大小（读入前先检查 content_length）
+    f.seek(0, 2)
+    size = f.tell()
+    f.seek(0)
+    if size > MAX_FILE_SIZE:
+        return jsonify({"ok": False, "msg": f"文件超过 20MB 限制（当前 {size/1024/1024:.1f} MB）"})
+
+    ext = f.filename.rsplit(".", 1)[1].lower()
+    stored_name = f"{uuid.uuid4().hex}.{ext}"
+    save_path = os.path.join(_upload_dir(), stored_name)
+    f.save(save_path)
+
+    att = TransferAttachment(
+        transfer_id=tid,
+        original_name=f.filename,
+        stored_name=stored_name,
+        file_size=size,
+        mime_type=f.content_type or "",
+        uploader_id=current_user.id,
+    )
+    db.session.add(att)
+    db.session.flush()
+    _log("create", tid, f"移交#{tid}上传附件：{f.filename}")
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "id": att.id,
+        "original_name": att.original_name,
+        "file_size": att.size_human(),
+        "uploaded_at": att.uploaded_at.strftime("%Y-%m-%d %H:%M"),
+    })
+
+
+# ─── API: 附件列表 ───────────────────────────
+@transfer_bp.route("/api/<int:tid>/attachments")
+@login_required
+def api_attachments(tid):
+    Transfer.query.get_or_404(tid)
+    rows = TransferAttachment.query.filter_by(transfer_id=tid)\
+        .order_by(TransferAttachment.uploaded_at.desc()).all()
+    data = [{
+        "id": a.id,
+        "original_name": a.original_name,
+        "file_size": a.size_human(),
+        "mime_type": a.mime_type,
+        "uploader": a.uploader.real_name or a.uploader.username if a.uploader else "未知",
+        "uploaded_at": a.uploaded_at.strftime("%Y-%m-%d %H:%M") if a.uploaded_at else "",
+    } for a in rows]
+    return jsonify({"ok": True, "data": data})
+
+
+# ─── API: 下载附件 ───────────────────────────
+@transfer_bp.route("/api/attachments/<int:aid>/download")
+@login_required
+def api_download_attachment(aid):
+    a = TransferAttachment.query.get_or_404(aid)
+    upload_dir = _upload_dir()
+    return send_from_directory(
+        upload_dir,
+        a.stored_name,
+        as_attachment=True,
+        download_name=a.original_name,
+    )
+
+
+# ─── API: 删除附件 ───────────────────────────
+@transfer_bp.route("/api/attachments/<int:aid>/delete", methods=["POST"])
+@login_required
+def api_delete_attachment(aid):
+    if not current_user.can_edit():
+        return jsonify({"ok": False, "msg": "权限不足"}), 403
+    a = TransferAttachment.query.get_or_404(aid)
+    tid = a.transfer_id
+    fpath = os.path.join(_upload_dir(), a.stored_name)
+    if os.path.exists(fpath):
+        os.remove(fpath)
+    _log("delete", tid, f"移交#{tid}删除附件：{a.original_name}")
+    db.session.delete(a)
     db.session.commit()
     return jsonify({"ok": True})
