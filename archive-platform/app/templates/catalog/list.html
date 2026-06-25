@@ -1,10 +1,10 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}档案总库{% endblock %}
 {% block page_title %}档案总库{% endblock %}
 
 {% block head_extra %}
-<link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-<link href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css" rel="stylesheet">
+<link href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}" rel="stylesheet">
+<link href="{{ url_for('static', filename='vendor/css/buttons.bootstrap5.min.css') }}" rel="stylesheet">
 <style>
   .filter-bar { background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
   .filter-bar .form-select, .filter-bar .form-control { font-size: 0.9rem; }
@@ -25,6 +25,11 @@
   #batchBar { display: none; background: #fff3cd; border-radius: 6px; padding: 8px 16px; margin-bottom: 12px; align-items: center; gap: 12px; flex-wrap: wrap; }
   #batchBar.show { display: flex; }
   #archiveTable th.select-col, #archiveTable td.select-col { width: 36px; padding-left: 12px; }
+  /* 专题类型管理表格 */
+  #topicMgrTable td { vertical-align: middle; }
+  /* Toast 通知 */
+  #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+  .badge-专题 { background: #7c3aed; color: #fff; }
 </style>
 {% endblock %}
 
@@ -34,9 +39,13 @@
   <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">档案总量</div></div>
   <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">文书档案</div></div>
   <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">设备档案</div></div>
+  <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">专题档案</div></div>
   <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">有电子版</div></div>
   <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">已上链</div></div>
 </div>
+
+<!-- Toast 容器 -->
+<div id="toastContainer"></div>
 
 <!-- 筛选栏 -->
 <div class="filter-bar">
@@ -50,6 +59,8 @@
         <option value="科研">科研档案</option>
         <option value="基建">基建档案</option>
         <option value="会计">会计档案</option>
+        <option value="实物">实物档案</option>
+        <option value="专题">专题档案</option>
       </select>
     </div>
     <div class="col-md-2">
@@ -70,10 +81,45 @@
       </select>
     </div>
     <div class="col-md-2">
+      <label class="form-label small mb-1">责任者</label>
+      <div class="position-relative">
+        <input type="text" class="form-control form-control-sm" id="filterResponsible"
+          name="responsible" placeholder="输入关键词搜索" autocomplete="off">
+        <div id="responsibleDropdown" class="list-group position-absolute w-100 shadow-sm"
+          style="z-index:1055;max-height:200px;overflow-y:auto;display:none;top:100%;left:0;border-radius:0 0 6px 6px;font-size:.85rem;"></div>
+      </div>
+    </div>
+    <!-- 实物类型下拉（选实物时显示） -->
+    <div class="col-md-2" id="filterObjectTypeWrap" style="display:none">
+      <label class="form-label small mb-1">实物类型</label>
+      <select class="form-select form-select-sm" id="filterObjectType" name="object_type">
+        <option value="">全部类型</option>
+        <option value="印章">印章</option>
+        <option value="图书">图书/刊物</option>
+        <option value="荣誉实物">荣誉实物</option>
+        <option value="照片">照片档案</option>
+        <option value="其他实物">其他实物</option>
+      </select>
+    </div>
+    <!-- 专题子类型下拉（选专题时显示） -->
+    <div class="col-md-2" id="filterTopicTypeWrap" style="display:none">
+      <label class="form-label small mb-1">专题子类型</label>
+      <select class="form-select form-select-sm" id="filterTopicType" name="topic_type">
+        <option value="">全部专题</option>
+      </select>
+    </div>
+    <div class="col-md-2">
       <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>筛选</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resetFilters()"><i class="bi bi-x-circle me-1"></i>重置</button>
     </div>
-    <div class="col-md-4 text-end d-flex gap-2 justify-content-end">
+    <div class="col-md-4 text-end d-flex gap-2 justify-content-end flex-wrap">
+      {% if current_user.role == 'admin' %}
+      <button type="button" class="btn btn-outline-purple btn-sm"
+        style="color:#7c3aed;border-color:#7c3aed;"
+        onclick="openTopicMgr()">
+        <i class="bi bi-tags me-1"></i>专题类型
+      </button>
+      {% endif %}
       {% if current_user.can_edit() %}
       <div class="dropdown">
         <button class="btn btn-outline-success btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -120,7 +166,7 @@
         <tr>
           <th class="select-col"><input type="checkbox" id="selectAll" title="全选/取消全选"></th>
           <th width="50">#</th>
-          <th width="60">类别</th>
+          <th width="80">类别</th>
           <th width="120">档号</th>
           <th>文件题名</th>
           <th width="70">年度</th>
@@ -155,7 +201,7 @@
             <select id="b_category" class="form-select form-select-sm">
               <option value="">— 不修改 —</option>
               <option>文书</option><option>基建</option><option>科研</option>
-              <option>设备</option><option>会计</option>
+              <option>设备</option><option>会计</option><option>实物</option><option>专题</option>
             </select>
           </div>
           <div class="col-md-6">
@@ -197,15 +243,103 @@
     </div>
   </div>
 </div>
+
+<!-- 专题类型管理 Modal -->
+<div class="modal fade" id="topicMgrModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f3e8ff;">
+        <h5 class="modal-title" style="color:#7c3aed;">
+          <i class="bi bi-tags me-2"></i>专题档案类型管理
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <p class="mb-0 small text-muted">管理专题档案的子类型，可自定义增删改排序。</p>
+          <button class="btn btn-sm btn-primary" onclick="openAddTopicType()">
+            <i class="bi bi-plus-lg me-1"></i>新增类型
+          </button>
+        </div>
+        <table class="table table-sm table-hover" id="topicMgrTable">
+          <thead class="table-light">
+            <tr>
+              <th width="50">排序</th>
+              <th>类型名称</th>
+              <th>说明</th>
+              <th width="70">状态</th>
+              <th width="100">操作</th>
+            </tr>
+          </thead>
+          <tbody id="topicMgrBody">
+            <tr><td colspan="5" class="text-center text-muted py-3">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新增/编辑专题类型 Modal -->
+<div class="modal fade" id="topicTypeEditModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f3e8ff;">
+        <h5 class="modal-title" style="color:#7c3aed;" id="topicTypeEditTitle">
+          <i class="bi bi-tag me-2"></i>新增专题类型
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editTopicId" value="">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">类型名称 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="editTopicName" placeholder="如：职代会、党代会、疫情专题">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">说明</label>
+          <input type="text" class="form-control" id="editTopicDesc" placeholder="可选，简要描述该类型">
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">排序号</label>
+            <input type="number" class="form-control" id="editTopicSort" value="0" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">状态</label>
+            <select class="form-select" id="editTopicActive">
+              <option value="1">启用</option>
+              <option value="0">禁用</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="saveTopicType()">
+          <i class="bi bi-check-lg me-1"></i>保存
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
 <script>
 var selectedIds = new Set();
+var topicTypes = [];  // 缓存专题类型列表
 
+// ── 页面初始化 ──
 $(function() {
+  // 预加载专题类型
+  loadTopicTypes();
+
   var table = $('#archiveTable').DataTable({
     serverSide: true,
     processing: true,
@@ -215,6 +349,9 @@ $(function() {
         d.category = $('#filterCategory').val();
         d.archive_year = $('#filterYear').val();
         d.retention_period = $('#filterPeriod').val();
+        d.responsible = $('#filterResponsible').val().trim();
+        d.object_type = $('#filterObjectType').val();
+        d.topic_type = $('#filterTopicType').val();
       }
     },
     columns: [
@@ -225,17 +362,22 @@ $(function() {
         }
       },
       { data: 'id' },
-      { data: 'category', render: function(d) {
-        return '<span class="badge bg-secondary badge-category">' + d + '</span>';
-      }},
+      { data: null, render: function(row) {
+          if (row.category === '专题') {
+            var sub = row.topic_type ? ' <small style="font-weight:400;opacity:.85">· ' + escapeHtml(row.topic_type) + '</small>' : '';
+            return '<span class="badge badge-专题 badge-category">专题' + sub + '</span>';
+          }
+          return '<span class="badge bg-secondary badge-category">' + escapeHtml(row.category||'') + '</span>';
+        }
+      },
       { data: 'archive_number' },
       { data: 'title', render: function(d) {
-        return '<span class="archive-title" title="' + (d||'') + '">' + (d||'') + '</span>';
+        return '<span class="archive-title" title="' + escapeHtml(d||'') + '">' + escapeHtml(d||'') + '</span>';
       }},
       { data: 'archive_year' },
       { data: 'retention_period', render: function(d) {
-        var cls = 'badge-period-' + d;
-        return '<span class="badge ' + cls + '">' + (d||'') + '</span>';
+        var cls = 'badge-period-' + (d||'');
+        return '<span class="badge ' + cls + '">' + escapeHtml(d||'') + '</span>';
       }},
       { data: 'responsible' },
       { data: 'doc_date' },
@@ -253,13 +395,12 @@ $(function() {
       }}
     ],
     language: {
-      url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/zh-HANS.json'
+      url: '{{ url_for("static", filename="vendor/js/datatables-zh.json") }}'
     },
     pageLength: 50,
     lengthMenu: [[20, 50, 100, 200], [20, 50, 100, 200]],
     order: [[1, 'desc']],
     drawCallback: function() {
-      // 恢复勾选状态
       $('.row-check').each(function() {
         var id = parseInt($(this).data('id'));
         if (selectedIds.has(id)) $(this).prop('checked', true);
@@ -296,12 +437,33 @@ $(function() {
     loadStats();
   });
 
+  // 类别切换联动
+  $('#filterCategory').on('change', function() {
+    var v = $(this).val();
+    if (v === '实物') {
+      $('#filterObjectTypeWrap').show();
+      $('#filterTopicTypeWrap').hide();
+      $('#filterTopicType').val('');
+    } else if (v === '专题') {
+      $('#filterTopicTypeWrap').show();
+      $('#filterObjectTypeWrap').hide();
+      $('#filterObjectType').val('');
+    } else {
+      $('#filterObjectTypeWrap').hide();
+      $('#filterObjectType').val('');
+      $('#filterTopicTypeWrap').hide();
+      $('#filterTopicType').val('');
+    }
+  });
+
   function loadStats() {
     $.get("{{ url_for('catalog.api_stats') }}", function(resp) {
+      var zhuShu = (resp.categories.find(function(c){ return c.name === '专题'; }) || {count:0}).count;
       $('#statsBar').html(
         '<div class="stat-card"><div class="stat-num">' + resp.total + '</div><div class="stat-label">档案总量</div></div>' +
-        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='文书'}) || {count:0}).count + '</div><div class="stat-label">文书档案</div></div>' +
-        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='设备'}) || {count:0}).count + '</div><div class="stat-label">设备档案</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='文书';}) || {count:0}).count + '</div><div class="stat-label">文书档案</div></div>' +
+        '<div class="stat-card"><div class="stat-num">' + (resp.categories.find(function(c){return c.name==='设备';}) || {count:0}).count + '</div><div class="stat-label">设备档案</div></div>' +
+        '<div class="stat-card"><div class="stat-num" style="color:#7c3aed">' + zhuShu + '</div><div class="stat-label">专题档案</div></div>' +
         '<div class="stat-card"><div class="stat-num">' + resp.with_electronic + '</div><div class="stat-label">有电子版</div></div>' +
         '<div class="stat-card"><div class="stat-num">' + resp.with_blockchain + '</div><div class="stat-label">已上链</div></div>'
       );
@@ -318,6 +480,142 @@ $(function() {
   loadStats();
   $('[data-bs-toggle="tooltip"]').tooltip();
 });
+
+// ── 专题类型 ──
+function loadTopicTypes(callback) {
+  fetch("{{ url_for('catalog.api_topic_types') }}")
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      topicTypes = data;
+      // 更新筛选下拉
+      var sel = document.getElementById('filterTopicType');
+      var cur = sel.value;
+      sel.innerHTML = '<option value="">全部专题</option>';
+      data.forEach(function(t) {
+        if (t.is_active) {
+          sel.innerHTML += '<option value="' + escapeHtml(t.name) + '">' + escapeHtml(t.name) + '</option>';
+        }
+      });
+      sel.value = cur;
+      if (callback) callback(data);
+    });
+}
+
+function openTopicMgr() {
+  var modal = new bootstrap.Modal(document.getElementById('topicMgrModal'));
+  modal.show();
+  loadTopicTypes(function(data) {
+    renderTopicMgrList(data);
+  });
+}
+
+function renderTopicMgrList(data) {
+  var tbody = document.getElementById('topicMgrBody');
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">暂无专题类型，请点击"新增类型"</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(function(t) {
+    return '<tr>' +
+      '<td>' + t.sort_order + '</td>' +
+      '<td><strong>' + escapeHtml(t.name) + '</strong></td>' +
+      '<td class="text-muted small">' + escapeHtml(t.description || '') + '</td>' +
+      '<td>' + (t.is_active
+        ? '<span class="badge bg-success">启用</span>'
+        : '<span class="badge bg-secondary">禁用</span>') + '</td>' +
+      '<td>' +
+        '<button class="btn btn-xs btn-outline-primary me-1" onclick="openEditTopicType(' + t.id + ')"><i class="bi bi-pencil"></i></button>' +
+        '<button class="btn btn-xs btn-outline-danger" onclick="deleteTopicType(' + t.id + ', \'' + escapeHtml(t.name).replace(/'/g, "\\'") + '\')"><i class="bi bi-trash"></i></button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function openAddTopicType() {
+  document.getElementById('editTopicId').value = '';
+  document.getElementById('editTopicName').value = '';
+  document.getElementById('editTopicDesc').value = '';
+  document.getElementById('editTopicSort').value = '0';
+  document.getElementById('editTopicActive').value = '1';
+  document.getElementById('topicTypeEditTitle').innerHTML = '<i class="bi bi-tag me-2"></i>新增专题类型';
+  new bootstrap.Modal(document.getElementById('topicTypeEditModal')).show();
+}
+
+function openEditTopicType(id) {
+  var t = topicTypes.find(function(x){ return x.id === id; });
+  if (!t) return;
+  document.getElementById('editTopicId').value = t.id;
+  document.getElementById('editTopicName').value = t.name;
+  document.getElementById('editTopicDesc').value = t.description || '';
+  document.getElementById('editTopicSort').value = t.sort_order;
+  document.getElementById('editTopicActive').value = t.is_active ? '1' : '0';
+  document.getElementById('topicTypeEditTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>编辑专题类型';
+  new bootstrap.Modal(document.getElementById('topicTypeEditModal')).show();
+}
+
+function saveTopicType() {
+  var id = document.getElementById('editTopicId').value;
+  var name = document.getElementById('editTopicName').value.trim();
+  if (!name) { showToast('请填写类型名称', 'danger'); return; }
+  var payload = {
+    name: name,
+    description: document.getElementById('editTopicDesc').value.trim(),
+    sort_order: parseInt(document.getElementById('editTopicSort').value) || 0,
+    is_active: document.getElementById('editTopicActive').value === '1'
+  };
+  var url = id
+    ? "{{ url_for('catalog.api_topic_types') }}".replace('/topic-types', '/topic-types/') + id
+    : "{{ url_for('catalog.api_topic_types') }}";
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('topicTypeEditModal')).hide();
+      showToast(id ? '修改成功' : '新增成功', 'success');
+      loadTopicTypes(function(data) { renderTopicMgrList(data); });
+    } else {
+      showToast('操作失败：' + d.msg, 'danger');
+    }
+  });
+}
+
+function deleteTopicType(id, name) {
+  if (!confirm('确认删除专题类型【' + name + '】？\n有档案引用时将拒绝删除。')) return;
+  fetch("{{ url_for('catalog.api_topic_types') }}".replace('/topic-types', '/topic-types/') + id + '/delete', {
+    method: 'POST'
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      showToast('已删除', 'success');
+      loadTopicTypes(function(data) { renderTopicMgrList(data); });
+    } else {
+      showToast(d.msg, 'danger');
+    }
+  });
+}
+
+// ── 工具函数 ──
+function showToast(msg, type) {
+  type = type || 'info';
+  var colors = { success: '#198754', danger: '#dc3545', info: '#0d6efd', warning: '#ffc107' };
+  var id = 'toast_' + Date.now();
+  var html = '<div id="' + id + '" style="background:' + (colors[type]||'#333') + ';color:#fff;padding:10px 18px;' +
+    'border-radius:6px;margin-bottom:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-size:.9rem;' +
+    'display:flex;align-items:center;gap:8px;min-width:200px;">' +
+    '<i class="bi bi-' + (type==='success'?'check-circle':type==='danger'?'x-circle':'info-circle') + '"></i>' +
+    msg + '</div>';
+  document.getElementById('toastContainer').insertAdjacentHTML('beforeend', html);
+  setTimeout(function() {
+    var el = document.getElementById(id);
+    if (el) el.remove();
+  }, 3000);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 function updateBatchBar() {
   var count = selectedIds.size;
@@ -347,6 +645,12 @@ function resetFilters() {
   $('#filterCategory').val('');
   $('#filterYear').val('');
   $('#filterPeriod').val('');
+  $('#filterResponsible').val('');
+  $('#responsibleDropdown').hide();
+  $('#filterObjectType').val('');
+  $('#filterObjectTypeWrap').hide();
+  $('#filterTopicType').val('');
+  $('#filterTopicTypeWrap').hide();
   $('#archiveTable').DataTable().ajax.reload();
 }
 
@@ -371,12 +675,9 @@ function submitBatch() {
     fonds_number: document.getElementById('b_fonds_number').value.trim() || null,
     electronic_location: document.getElementById('b_electronic_location').value.trim() || null,
   };
-
-  // 过滤掉 null
   Object.keys(payload).forEach(function(k) {
     if (k !== 'ids' && payload[k] === null) delete payload[k];
   });
-
   fetch("{{ url_for('catalog.api_batch_update') }}", {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -386,9 +687,9 @@ function submitBatch() {
       bootstrap.Modal.getInstance(document.getElementById('batchModal')).hide();
       clearSelection();
       $('#archiveTable').DataTable().ajax.reload();
-      alert('批量修改成功，共更新 ' + d.affected + ' 条档案');
+      showToast('批量修改成功，共更新 ' + d.affected + ' 条档案', 'success');
     } else {
-      alert('修改失败：' + d.msg);
+      showToast('修改失败：' + d.msg, 'danger');
     }
   });
 }
@@ -399,16 +700,76 @@ function exportData() {
     category: document.getElementById('filterCategory').value,
     archive_year: document.getElementById('filterYear').value,
     retention_period: document.getElementById('filterPeriod').value,
+    responsible: document.getElementById('filterResponsible').value.trim(),
+    object_type: document.getElementById('filterObjectType').value,
+    topic_type: document.getElementById('filterTopicType').value,
   });
-  // 如果有 DataTables 搜索词
   var dtSearch = $('#archiveTable').DataTable().search();
   if (dtSearch) params.set('q', dtSearch);
-
   var label = document.getElementById('filterCategory').value || '全部';
-  var confirmMsg = '确认导出当前筛选结果（类别：' + label + '）为 Excel 文件？';
-  if (!confirm(confirmMsg)) return;
-
+  if (!confirm('确认导出当前筛选结果（类别：' + label + '）为 Excel 文件？')) return;
   window.location.href = "{{ url_for('catalog.export_data') }}?" + params.toString();
 }
+
+// ── 责任者搜索下拉 ──
+(function() {
+  var input = document.getElementById('filterResponsible');
+  var dropdown = document.getElementById('responsibleDropdown');
+  var timer = null;
+
+  function fetchResponsible(q) {
+    fetch("{{ url_for('catalog.api_responsible') }}?q=" + encodeURIComponent(q))
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        if (data.length === 0) { dropdown.style.display = 'none'; return; }
+        dropdown.innerHTML = data.map(function(item) {
+          return '<button type="button" class="list-group-item list-group-item-action py-1 px-2" data-name="' +
+            item.name.replace(/"/g,'&quot;') + '">' +
+            '<span>' + item.name + '</span>' +
+            '<span class="text-muted ms-1 small">(' + item.count + ')</span></button>';
+        }).join('');
+        dropdown.style.display = 'block';
+      });
+  }
+
+  input.addEventListener('input', function() {
+    clearTimeout(timer);
+    var q = this.value.trim();
+    if (q.length === 0) {
+      fetchResponsible('');
+    } else {
+      timer = setTimeout(function(){ fetchResponsible(q); }, 200);
+    }
+  });
+
+  input.addEventListener('focus', function() {
+    fetchResponsible(this.value.trim());
+  });
+
+  dropdown.addEventListener('click', function(e) {
+    var btn = e.target.closest('button[data-name]');
+    if (!btn) return;
+    input.value = btn.getAttribute('data-name');
+    dropdown.style.display = 'none';
+    $('#archiveTable').DataTable().ajax.reload();
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dropdown.style.display = 'none';
+      $('#archiveTable').DataTable().ajax.reload();
+    }
+    if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+    }
+  });
+})();
 </script>
 {% endblock %}

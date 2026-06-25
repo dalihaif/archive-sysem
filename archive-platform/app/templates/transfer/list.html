@@ -3,7 +3,7 @@
 {% block page_title %}移交管理{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}">
 <style>
 .upload-drop-zone {
   border: 2px dashed #ced4da;
@@ -242,8 +242,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
 <script>
 const BASE = '{{ url_for("transfer.list") }}'.replace(/\/$/, '');
 
@@ -297,7 +297,7 @@ const table = $('#transferTable').DataTable({
       }
     }
   ],
-  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  language: { url: '{{ url_for("static", filename="vendor/js/datatables-zh.json") }}' },
   pageLength: 20, order: [[0, 'desc']],
   drawCallback: () => {
     fetch(BASE + '/api/list?status=待接收&start=0&length=1')

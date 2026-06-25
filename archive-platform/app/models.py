@@ -52,8 +52,12 @@ class Archive(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
 
-    # 档案类别：文书/基建/科研/设备
+    # 档案类别：文书/基建/科研/设备/会计/实物/专题
     category = db.Column(db.String(20), nullable=False, default="文书", index=True)
+    # 实物档案子类型：印章/图书/荣誉实物/照片/其他实物（仅 category="实物" 时使用）
+    object_type = db.Column(db.String(30), default="", index=True)
+    # 专题档案子类型：职代会/党代会/专题会议/疫情专题等（仅 category="专题" 时使用，可自定义）
+    topic_type = db.Column(db.String(50), default="", index=True)
 
     # 核心档案字段（Excel导入）
     archive_number = db.Column(db.String(100), default="", index=True)     # 档号
@@ -102,6 +106,8 @@ class Archive(db.Model):
         return {
             "id": self.id,
             "category": self.category,
+            "object_type": self.object_type or "",
+            "topic_type": self.topic_type or "",
             "archive_number": self.archive_number,
             "fonds_number": self.fonds_number,
             "archive_year": self.archive_year,
@@ -337,3 +343,29 @@ class ExternalSearchCache(db.Model):
 
     def __repr__(self):
         return f"<ExternalSearchCache {self.query[:30]}>"
+
+
+# ============================================================
+# 专题档案类型（可自定义）
+# ============================================================
+class SpecialTopicType(db.Model):
+    __tablename__ = "special_topic_types"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)  # 类型名称
+    description = db.Column(db.Text, default="")                  # 说明
+    sort_order = db.Column(db.Integer, default=0)                  # 排序
+    is_active = db.Column(db.Boolean, default=True)               # 是否启用
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description or "",
+            "sort_order": self.sort_order,
+            "is_active": self.is_active,
+        }
+
+    def __repr__(self):
+        return f"<SpecialTopicType {self.name}>"

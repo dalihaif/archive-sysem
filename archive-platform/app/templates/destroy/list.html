@@ -3,7 +3,7 @@
 {% block page_title %}销毁鉴定{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -218,8 +218,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
 <script>
 let currentPeriod = '';
 let selectedIds = new Set();
@@ -239,7 +239,7 @@ const overdueTable = $('#overdueTable').DataTable({
     { data: 'pages' },
     { data: null, orderable: false, render: (d,t,row) => `<button class="btn btn-xs btn-warning" onclick="singleAppraise(${row.id},'${row.archive_number}')"><i class="bi bi-clipboard-check"></i> 鉴定</button>` }
   ],
-  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  language: { url: '{{ url_for("static", filename="vendor/js/datatables-zh.json") }}' },
   pageLength: 20, order: [[5,'asc']]
 });
 
@@ -257,7 +257,7 @@ const recordsTable = $('#recordsTable').DataTable({
     { data: 'approver_name' },
     { data: 'remarks' },
   ],
-  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  language: { url: '{{ url_for("static", filename="vendor/js/datatables-zh.json") }}' },
   pageLength: 20, order: [[0,'desc']],
   drawCallback: () => {
     fetch('{{ url_for("destroy.api_records") }}?search[value]=销毁&start=0&length=1')

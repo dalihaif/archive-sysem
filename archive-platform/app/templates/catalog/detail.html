@@ -53,20 +53,33 @@
       <div class="card-header"><i class="bi bi-file-pdf me-2"></i>电子版</div>
       <div class="card-body">
         {% if archive.electronic_path %}
-          <div class="d-grid">
-            {% if current_user.role == 'admin' %}
-            <a href="#" class="btn btn-outline-success btn-sm mb-2"><i class="bi bi-download me-1"></i>下载电子版</a>
-            <a href="#" class="btn btn-outline-info btn-sm"><i class="bi bi-eye me-1"></i>在线预览</a>
-            {% else %}
-            <p class="text-muted small"><i class="bi bi-lock me-1"></i>需管理员权限或借阅审批通过后查看</p>
+          <div class="d-grid gap-2">
+            <a href="{{ url_for('catalog.download_electronic', archive_id=archive.id) }}"
+               class="btn btn-outline-success btn-sm">
+              <i class="bi bi-download me-1"></i>下载电子版
+            </a>
+            {% set ext = archive.electronic_path.rsplit('.', 1)[-1].lower() if '.' in archive.electronic_path else '' %}
+            {% if ext in ['pdf', 'jpg', 'jpeg', 'png', 'gif'] %}
+            <a href="{{ url_for('catalog.preview_electronic', archive_id=archive.id) }}"
+               target="_blank" class="btn btn-outline-info btn-sm">
+              <i class="bi bi-eye me-1"></i>在线预览
+            </a>
+            {% endif %}
+            {% if current_user.role != 'admin' %}
+            <small class="text-muted"><i class="bi bi-info-circle me-1"></i>需借阅审批通过后可下载</small>
             {% endif %}
           </div>
-          <hr>
-          <small class="text-muted">文件大小: {{ (archive.electronic_size / 1024) | round(1) if archive.electronic_size else 0 }} KB</small>
+          <hr class="my-2">
+          <small class="text-muted">
+            文件大小: {{ (archive.electronic_size / 1024) | round(1) if archive.electronic_size else 0 }} KB
+            &nbsp;·&nbsp;{{ ext.upper() if ext else '未知格式' }}
+          </small>
         {% else %}
           <p class="text-muted small"><i class="bi bi-exclamation-circle me-1"></i>暂无电子版</p>
           {% if current_user.can_edit() %}
-          <button class="btn btn-outline-primary btn-sm"><i class="bi bi-upload me-1"></i>上传电子版</button>
+          <button class="btn btn-outline-primary btn-sm" onclick="alert('请在编辑页面上传电子版')">
+            <i class="bi bi-upload me-1"></i>上传电子版
+          </button>
           {% endif %}
         {% endif %}
       </div>

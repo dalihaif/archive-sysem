@@ -1,6 +1,7 @@
 import secrets
 import datetime
-from flask import render_template, request, jsonify, redirect, url_for, flash
+import io
+from flask import render_template, request, jsonify, redirect, url_for, flash, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import or_
 from app.borrow import borrow_bp
@@ -211,6 +212,172 @@ def api_create():
     _log("borrow", b.id, f"录入借阅申请（{b.borrower}）")
     db.session.commit()
     return jsonify({"ok": True, "id": b.id})
+
+
+# ─────────────────────────────────────────────
+# API: 修改借阅记录
+# ─────────────────────────────────────────────
+@borrow_bp.route("/api/<int:bid>/update", methods=["POST"])
+@login_required
+def api_update(bid):
+    if not current_user.can_edit():
+        return jsonify({"ok": False, "msg": "权限不足"}), 403
+
+    b = Borrow.query.get_or_404(bid)
+    data = request.json or {}
+
+    changes = []
+    field_map = {
+        "borrower": ("borrower", str),
+        "borrower_department": ("borrower_department", str),
+        "borrower_phone": ("borrower_phone", str),
+        "archive_ref": ("archive_ref", str),
+        "purpose": ("purpose", str),
+    }
+
+    for json_key, (model_key, _) in field_map.items():
+        if json_key in data:
+            new_val = (data[json_key] or "").strip()
+            old_val = getattr(b, model_key) or ""
+            if new_val != old_val:
+                changes.append(f"{json_key}: {old_val!r} -> {new_val!r}")
+                setattr(b, model_key, new_val)
+
+    # 归还日期（特殊处理）
+    if "return_date" in data:
+        rd_str = (data["return_date"] or "").strip()
+        if rd_str:
+            try:
+                rd = datetime.datetime.strptime(rd_str, "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({"ok": False, "msg": "归还日期格式错误，需 YYYY-MM-DD"})
+            if b.return_date != rd:
+                changes.append(f"return_date: {b.return_date} -> {rd}")
+                b.return_date = rd
+        else:
+            if b.return_date is not None:
+                changes.append("return_date: cleared")
+                b.return_date = None
+
+    # 状态（仅管理员可改状态）
+    if "status" in data and current_user.is_admin():
+        new_status = (data["status"] or "").strip()
+        valid_statuses = ["待审批", "已通过", "已拒绝", "已归还"]
+        if new_status in valid_statuses and b.status != new_status:
+            changes.append(f"status: {b.status} -> {new_status}")
+            b.status = new_status
+            # 如果改为已通过且没有 access_code，自动生成
+            if new_status == "已通过" and not b.access_code:
+                b.access_code = secrets.token_hex(3).upper()
+                b.approver_id = current_user.id
+                b.approve_time = datetime.datetime.utcnow()
+
+    if not changes:
+        return jsonify({"ok": False, "msg": "没有修改任何字段"})
+
+    detail = f"修改借阅记录#{bid}（{b.borrower}）：{'; '.join(changes)}"
+    _log("borrow", bid, detail)
+    db.session.commit()
+    return jsonify({"ok": True, "changes": len(changes)})
+
+
+# ─────────────────────────────────────────────
+# API: 导出借阅数据（Excel）
+# ─────────────────────────────────────────────
+@borrow_bp.route("/export")
+@login_required
+def export():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    status = request.args.get("status", "").strip()
+    search = request.args.get("search", "").strip()
+
+    q = Borrow.query
+    if status:
+        q = q.filter(Borrow.status == status)
+    if search:
+        q = q.filter(or_(
+            Borrow.borrower.contains(search),
+            Borrow.borrower_department.contains(search),
+            Borrow.archive_ref.contains(search),
+        ))
+
+    rows = q.order_by(Borrow.created_at.desc()).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "借阅记录"
+
+    headers = ["ID", "借阅人", "所在部门", "联系电话", "借阅档案", "借阅目的",
+               "登记日期", "归还日期", "状态", "审批人", "审批意见", "访问验证码", "创建时间"]
+
+    # 表头样式
+    header_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
+    )
+
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+
+    today = datetime.date.today()
+    for row_idx, b in enumerate(rows, 2):
+        is_overdue = (b.status == "已通过" and b.return_date and b.return_date < today)
+        display_status = "已逾期" if is_overdue else b.status
+
+        values = [
+            b.id,
+            b.borrower or "",
+            b.borrower_department or "",
+            b.borrower_phone or "",
+            b.archive_ref or "",
+            b.purpose or "",
+            b.borrow_date.strftime("%Y-%m-%d") if b.borrow_date else "",
+            b.return_date.strftime("%Y-%m-%d") if b.return_date else "",
+            display_status,
+            b.approver.real_name or b.approver.username if b.approver else "",
+            b.approve_comment or "",
+            b.access_code or "",
+            b.created_at.strftime("%Y-%m-%d %H:%M") if b.created_at else "",
+        ]
+        for col_idx, v in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=v)
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            # 逾期行标红
+            if is_overdue:
+                cell.fill = PatternFill(start_color="FDE8E8", end_color="FDE8E8", fill_type="solid")
+
+    # 列宽
+    col_widths = [6, 12, 18, 14, 30, 30, 12, 12, 10, 10, 24, 12, 18]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[chr(64 + i) if i <= 26 else "A"].width = w
+    # 修正列宽设置（支持超过26列）
+    from openpyxl.utils import get_column_letter
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.row_dimensions[1].height = 28
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    fname = f"borrows_{datetime.date.today().strftime('%Y%m%d')}.xlsx"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=fname,
+    )
 
 
 # ─────────────────────────────────────────────

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>我的借阅 - 档案管理平台</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/css/bootstrap-icons.css') }}" rel="stylesheet">
   <style>
     body { background: #f5f6fa; min-height: 100vh; }
     .mobile-header { background: linear-gradient(135deg, #1a365d, #2d5a87); color: #fff; padding: 24px 20px; text-align: center; }
@@ -15,14 +15,19 @@
     .borrow-item { border-left: 4px solid #0d6efd; background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
     .borrow-item.approved { border-left-color: #198754; }
     .borrow-item.rejected { border-left-color: #dc3545; }
+    .borrow-item.returned { border-left-color: #0dcaf0; }
+    .borrow-item.overdue { border-left-color: #dc3545; background: #fff5f5; }
     .borrow-item .status-badge { font-size: 0.8rem; }
+    .code-auto-filled { animation: pulse 0.6s ease; }
+    @keyframes pulse { 0% { background: #d4edda; } 100% { background: #fff; } }
+    .loading-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background:rgba(255,255,255,.7); display:none; align-items:center; justify-content:center; z-index:9999; }
   </style>
 </head>
 <body>
   <div class="mobile-header">
     <i class="bi bi-journal-check"></i>
     <h5 class="mt-2 mb-0">我的借阅</h5>
-    <small class="opacity-75">输入手机号和验证码查看</small>
+    <small class="opacity-75">输入手机号查看借阅记录</small>
   </div>
 
   <div class="card content-card mx-3">
@@ -31,11 +36,23 @@
       <div id="verifySection">
         <div class="mb-3">
           <label class="form-label fw-bold"><i class="bi bi-phone me-1"></i>手机号</label>
-          <input type="tel" id="phoneInput" class="form-control form-control-lg" placeholder="请输入申请时填写的手机号">
+          <input type="tel" id="phoneInput" class="form-control form-control-lg" placeholder="请输入申请时填写的手机号"
+            onkeydown="if(event.key==='Enter') document.getElementById('codeInput').focus()">
         </div>
-        <div class="mb-4">
-          <label class="form-label fw-bold"><i class="bi bi-shield-lock me-1"></i>验证码</label>
-          <input type="text" id="codeInput" class="form-control form-control-lg" placeholder="审批通过后收到的6位验证码">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <label class="form-label fw-bold mb-0"><i class="bi bi-shield-lock me-1"></i>验证码</label>
+            <small id="autoFillHint" class="text-success" style="display:none;">
+              <i class="bi bi-check-circle"></i> 已自动填入
+            </small>
+          </div>
+          <div class="input-group">
+            <input type="text" id="codeInput" class="form-control form-control-lg" placeholder="输入手机号后自动获取"
+              maxlength="6" style="text-transform:uppercase">
+            <button class="btn btn-outline-secondary" type="button" id="getCodeBtn" onclick="autoGetCode()">
+              <i class="bi bi-magic"></i> 获取
+            </button>
+          </div>
         </div>
         <button class="btn btn-primary btn-lg w-100" onclick="verifyAccess()">
           <i class="bi bi-unlock me-1"></i>查看借阅记录
@@ -43,13 +60,18 @@
 
         <hr class="my-4">
         <p class="text-muted text-center small">
-          <i class="bi bi-info-circle me-1"></i>审批通过后可在此查看和下载电子版档案
+          <i class="bi bi-info-circle me-1"></i>输入手机号后系统自动获取验证码，审批通过的借阅可查阅电子版
         </p>
       </div>
 
       <!-- 借阅记录区（默认隐藏） -->
       <div id="borrowsSection" style="display:none;">
-        <h6 class="fw-bold mb-3"><i class="bi bi-list-ul me-1"></i>我的借阅记录</h6>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-list-ul me-1"></i>我的借阅记录</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="backToVerify()">
+            <i class="bi bi-arrow-left"></i> 返回
+          </button>
+        </div>
         <div id="borrowsList">
           <p class="text-center text-muted py-4">暂无借阅记录</p>
         </div>
@@ -57,13 +79,202 @@
     </div>
   </div>
 
+  <!-- 加载遮罩 -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">加载中...</span>
+    </div>
+  </div>
+
   <script>
+    var phoneInput = document.getElementById('phoneInput');
+    var codeInput = document.getElementById('codeInput');
+    var autoFillHint = document.getElementById('autoFillHint');
+
+    // 手机号输入达到11位时自动获取验证码
+    phoneInput.addEventListener('input', function() {
+      var phone = this.value.trim();
+      if (phone.length === 11) {
+        autoGetCode();
+      } else {
+        codeInput.value = '';
+        autoFillHint.style.display = 'none';
+      }
+    });
+
+    // 自动获取验证码
+    function autoGetCode() {
+      var phone = phoneInput.value.trim();
+      if (!phone || phone.length < 7) {
+        alert('请先输入正确的手机号');
+        phoneInput.focus();
+        return;
+      }
+      showLoading(true);
+      fetch('/m/api/borrows/by-phone?phone=' + encodeURIComponent(phone))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          showLoading(false);
+          if (data.ok && data.access_code) {
+            codeInput.value = data.access_code;
+            codeInput.classList.add('code-auto-filled');
+            autoFillHint.style.display = 'inline';
+            setTimeout(function() { codeInput.classList.remove('code-auto-filled'); }, 600);
+          } else if (data.ok && !data.access_code) {
+            // 有借阅记录但没有已通过的
+            if (data.count > 0) {
+              // 直接展示记录
+              showBorrows(data.borrows);
+            } else {
+              alert(data.msg || '未找到借阅记录');
+            }
+          } else {
+            alert(data.msg || '未找到借阅记录');
+          }
+        })
+        .catch(function(err) {
+          showLoading(false);
+          alert('查询失败，请检查网络');
+        });
+    }
+
+    // 验证并查看
     function verifyAccess() {
-      var phone = document.getElementById('phoneInput').value.trim();
-      var code = document.getElementById('codeInput').value.trim();
+      var phone = phoneInput.value.trim();
+      var code = codeInput.value.trim();
       if (!phone) { alert('请输入手机号'); return; }
-      if (!code) { alert('请输入验证码'); return; }
-      alert('验证功能即将开放。审批通过后，您将收到手机通知和6位验证码。');
+
+      // 如果验证码为空，先自动获取
+      if (!code) {
+        autoGetCode();
+        return;
+      }
+
+      showLoading(true);
+      // 先验证码验证
+      fetch('/m/api/borrows/verify?phone=' + encodeURIComponent(phone) + '&code=' + encodeURIComponent(code))
+        .then(function(r) { return r.json(); })
+        .then(function(verifyData) {
+          if (verifyData.ok) {
+            // 验证通过，获取所有借阅记录
+            return fetch('/m/api/borrows/by-phone?phone=' + encodeURIComponent(phone))
+              .then(function(r2) { return r2.json(); })
+              .then(function(data) {
+                showLoading(false);
+                if (data.ok) {
+                  showBorrows(data.borrows);
+                } else {
+                  alert(data.msg || '获取记录失败');
+                }
+              });
+          } else {
+            // 验证码不正确，但仍可查看非电子版记录
+            showLoading(false);
+            if (confirm(verifyData.msg + '\n\n是否仍要查看借阅记录（不可查阅电子版）？')) {
+              fetch('/m/api/borrows/by-phone?phone=' + encodeURIComponent(phone))
+                .then(function(r2) { return r2.json(); })
+                .then(function(data) {
+                  if (data.ok) {
+                    showBorrows(data.borrows);
+                  } else {
+                    alert(data.msg);
+                  }
+                });
+            }
+          }
+        })
+        .catch(function(err) {
+          showLoading(false);
+          alert('查询失败，请检查网络');
+        });
+    }
+
+    // 展示借阅记录
+    function showBorrows(borrows) {
+      document.getElementById('verifySection').style.display = 'none';
+      document.getElementById('borrowsSection').style.display = 'block';
+
+      var list = document.getElementById('borrowsList');
+      if (!borrows || borrows.length === 0) {
+        list.innerHTML = '<p class="text-center text-muted py-4">暂无借阅记录</p>';
+        return;
+      }
+
+      var statusClass = {
+        '待审批': '',
+        '已通过': 'approved',
+        '已拒绝': 'rejected',
+        '已归还': 'returned',
+        '已逾期': 'overdue',
+      };
+      var statusBadge = {
+        '待审批': '<span class="badge bg-warning text-dark status-badge">待审批</span>',
+        '已通过': '<span class="badge bg-success status-badge">已通过</span>',
+        '已拒绝': '<span class="badge bg-secondary status-badge">已拒绝</span>',
+        '已归还': '<span class="badge bg-info status-badge">已归还</span>',
+        '已逾期': '<span class="badge bg-danger status-badge">已逾期</span>',
+      };
+
+      list.innerHTML = borrows.map(function(b) {
+        var cls = statusClass[b.status] || '';
+        var badge = statusBadge[b.status] || b.status;
+        var title = b.archive_title || b.archive_ref || '未知档案';
+
+        var html = '<div class="borrow-item ' + cls + '">'
+          + '<div class="d-flex justify-content-between align-items-start mb-1">'
+          +   '<strong class="text-truncate" style="max-width:240px;">' + escapeHtml(title) + '</strong>'
+          +   badge
+          + '</div>';
+
+        if (b.archive_number) {
+          html += '<div class="small text-muted mb-1"><i class="bi bi-hash"></i> ' + escapeHtml(b.archive_number) + '</div>';
+        }
+        if (b.borrower_department) {
+          html += '<div class="small text-muted mb-1"><i class="bi bi-building"></i> ' + escapeHtml(b.borrower_department) + '</div>';
+        }
+        if (b.purpose) {
+          html += '<div class="small text-muted mb-1"><i class="bi bi-chat-text"></i> ' + escapeHtml(b.purpose) + '</div>';
+        }
+
+        html += '<div class="small text-muted">'
+          + '<i class="bi bi-calendar3"></i> 借阅：' + (b.borrow_date || '—')
+          + ' &nbsp; <i class="bi bi-calendar-check"></i> 应还：' + (b.return_date || '—')
+          + '</div>';
+
+        // 已通过且有电子版：显示查阅按钮
+        if (b.status === '已通过' && b.can_view && b.has_electronic && b.archive_id) {
+          html += '<div class="mt-2">'
+            + '<a href="/catalog/' + b.archive_id + '/preview" class="btn btn-sm btn-success me-1">'
+            + '<i class="bi bi-eye"></i> 在线查阅</a>'
+            + '<a href="/catalog/' + b.archive_id + '/download" class="btn btn-sm btn-outline-success">'
+            + '<i class="bi bi-download"></i> 下载</a>'
+            + '</div>';
+        }
+
+        // 已通过但显示验证码
+        if (b.status === '已通过' && b.access_code) {
+          html += '<div class="alert alert-success py-1 px-2 mt-2 mb-0 small">'
+            + '<i class="bi bi-key"></i> 访问码：<strong>' + b.access_code + '</strong>'
+            + '</div>';
+        }
+
+        html += '</div>';
+        return html;
+      }).join('');
+    }
+
+    function backToVerify() {
+      document.getElementById('borrowsSection').style.display = 'none';
+      document.getElementById('verifySection').style.display = 'block';
+    }
+
+    function showLoading(show) {
+      document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+    }
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
   </script>
 </body>

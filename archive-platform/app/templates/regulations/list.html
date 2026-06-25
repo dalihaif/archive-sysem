@@ -3,7 +3,7 @@
 {% block page_title %}法规制度{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -99,8 +99,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
 <script>
 const table = $('#regTable').DataTable({
   serverSide: true, processing: true,
@@ -120,7 +120,7 @@ const table = $('#regTable').DataTable({
         return b;
     }}
   ],
-  language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh.json' },
+  language: { url: '{{ url_for("static", filename="vendor/js/datatables-zh.json") }}' },
   pageLength: 20, order: [[3,'desc']]
 });
 document.getElementById('filterCategory').addEventListener('change', () => table.ajax.reload());

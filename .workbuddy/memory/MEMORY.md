@@ -21,12 +21,25 @@
 - editor / editor123 (编辑者)
 - viewer / viewer123 (浏览者)
 
-## 数据库状态 (2026-06-18)
+## 数据库状态 (2026-06-24)
 - 文书档案: 18,133条
+- 会计档案: 7,636条
 - 设备档案: 1,940条
 - 科研档案: 101条
 - 基建档案: 86条
-- **合计: 20,260条**（全部已计算SHA-256+MD5哈希）
+- **实物档案: 238条**（印章，object_type="印章"）
+- **合计: 28,134条**
+
+## Archives 表字段扩展
+- `object_type VARCHAR(30)` — 实物档案子类型（印章/图书/荣誉实物/照片/其他实物），2026-06-24 添加
+- `topic_type VARCHAR(50)` — 专题档案子类型，2026-06-24 添加（与 object_type 平行，仅 category="专题" 时使用）
+- category 可选值：文书/设备/科研/基建/会计/实物/专题
+- 筛选栏"实物"↔"专题类型"下拉互斥联动
+
+## SpecialTopicType 模型（special_topic_types 表）
+- 字段：id/name/description/sort_order/is_active/created_at
+- 默认4条：职代会/党代会/专题会议/疫情专题
+- API：`GET /catalog/api/topic-types`、`POST /catalog/api/topic-types`、`POST /catalog/api/topic-types/<tid>`、`POST /catalog/api/topic-types/<tid>/delete`（有档案引用时拒绝删除）
 
 ## 已完成功能
 - [x] 项目骨架 + 数据库模型 + 蓝图路由
@@ -36,14 +49,27 @@
 - [x] 档案编辑页
 - [x] Excel数据导入（解析+预览+去重）
 - [x] 移动端借阅登记页（免登录）
-- [x] 移动端我的借阅页
-- [x] 借阅管理（完整审批流程：待审批/通过/拒绝/归还/逾期/访问码）
+- [x] 移动端我的借阅页（验证码自动填入+借阅记录展示+电子版查阅）
+- [x] 借阅管理（完整审批流程+**编辑修改+Excel导出**）
 - [x] 移交管理（移交登记/列表/状态更新/详情/**附件上传下载**）
 - [x] 销毁鉴定（到期预警/批量鉴定/鉴定记录）
 - [x] 法规制度管理（8条内置法规/增删改查/分类筛选）
 - [x] 系统管理（用户管理/权限/操作日志）
 - [x] 全文检索（多字段LIKE+关键词高亮+分页）
+- [x] 实物档案类别（object_type 字段，印章238条已导入）
+- [x] 专题档案类别（topic_type 字段，SpecialTopicType表，管理员可自定义子类型）
+- [x] CDN资源全面本地化（vendor/目录，10个模板已更新，零外部CDN依赖）
 - [ ] APScheduler定时任务（待实现）
+
+## 静态资源本地化 (2026-06-24)
+- **原因**：内网环境 jsdelivr/cdn.datatables/unpkg 均 ERR_CONNECTION_CLOSED
+- **vendor 目录**：`app/static/vendor/{css,js,fonts}/`
+  - CSS: bootstrap.min.css, bootstrap-icons.css, dataTables.bootstrap5.min.css, buttons.bootstrap5.min.css
+  - JS: jquery.min.js, bootstrap.bundle.min.js, chart.umd.min.js, jquery.dataTables.min.js, dataTables.bootstrap5.min.js, dataTables.buttons.min.js, buttons.bootstrap5.min.js, datatables-zh.json
+  - Fonts: css/fonts/bootstrap-icons.woff2, bootstrap-icons.woff
+- **下载来源**：bootcdn.net（Bootstrap/jQuery/Chart.js/Icons）、npm镜像（DataTables）
+- **模板引用**：`{{ url_for('static', filename='vendor/...') }}`
+- **已更新的10个模板**：base.html, auth/login.html, mobile/{my_borrows,borrow_form}.html, {catalog,borrow,transfer,destroy,regulations,admin}/list.html
 
 ## 关键接口规律（2026-06-22 完善各模块后）
 - 所有模块均采用 `/模块/api/xxx` RESTful 路由
@@ -67,5 +93,14 @@
 - 新模型 TransferAttachment（transfer_attachments 表）：原始名/存储名/大小/MIME/上传人/时间
 - 文件存储：`app/static/uploads/transfer/`，UUID命名防冲突，20MB限制，白名单扩展名
 - 接口：`/transfer/api/<tid>/attachments/upload|list`，`/transfer/api/attachments/<aid>/download|delete`
+
+## 电子档案批量导入（2026-06-24）
+- 源目录：`E:\工作文档\档案室\03_红头文件存档`（行政发文/党委发文/会议纪要/小红头/收文归档）
+- 脚本：`archive-platform/import_electronic.py`
+- 匹配策略：从文件名提取标题（去"N号—"前缀）+ 年份路径辅助，与 Archive.title 做 contains 匹配
+- 结果：526条档案成功匹配电子版文件（共扫描6067个）
+- 电子版存储：`app/static/uploads/electronic/`（UUID命名）
+- 新路由：`/catalog/<id>/download`（下载）、`/catalog/<id>/preview`（预览PDF/图片）
+- 报告文件：`electronic_matched.txt` / `electronic_no_match.txt`
 - 删除移交记录时自动级联删除磁盘文件
 - 前端：新建Modal嵌入拖拽上传区（先保存→自动逐个上传）；列表附件数badge；独立附件管理Modal（拖拽上传+实时进度+下载+删除）

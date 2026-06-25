@@ -1,10 +1,12 @@
 import io
+import os
+import re
 import datetime
-from flask import render_template, request, jsonify, url_for, send_file
+from flask import render_template, request, jsonify, url_for, send_file, current_app, abort
 from flask_login import login_required, current_user
 from sqlalchemy import or_
 from app.catalog import catalog_bp
-from app.models import Archive, OperationLog
+from app.models import Archive, OperationLog, SpecialTopicType
 from app.extensions import db
 
 
@@ -26,6 +28,9 @@ def api_list():
     category = request.args.get("category", "").strip()
     archive_year = request.args.get("archive_year", "").strip()
     retention_period = request.args.get("retention_period", "").strip()
+    responsible = request.args.get("responsible", "").strip()
+    object_type = request.args.get("object_type", "").strip()
+    topic_type = request.args.get("topic_type", "").strip()
 
     query = Archive.query
 
@@ -38,6 +43,12 @@ def api_list():
             pass
     if retention_period:
         query = query.filter(Archive.retention_period == retention_period)
+    if object_type:
+        query = query.filter(Archive.object_type == object_type)
+    if topic_type:
+        query = query.filter(Archive.topic_type == topic_type)
+    if responsible:
+        query = query.filter(Archive.responsible.ilike(f"%{responsible}%"))
     if search_value:
         pattern = f"%{search_value}%"
         query = query.filter(
@@ -75,6 +86,8 @@ def api_list():
         data.append({
             "id": a.id,
             "category": a.category,
+            "object_type": a.object_type or "",
+            "topic_type": a.topic_type or "",
             "archive_number": a.archive_number or "",
             "title": a.title[:80] if a.title else "",
             "archive_year": a.archive_year or "",
@@ -123,6 +136,119 @@ def api_stats():
         "with_electronic": Archive.query.filter(Archive.electronic_path != "").count(),
         "with_blockchain": Archive.query.filter(Archive.bc_hash != "").count(),
     })
+
+
+@catalog_bp.route("/api/responsible")
+@login_required
+def api_responsible():
+    """责任者搜索接口，返回匹配的责任者列表（按数量排序）"""
+    from sqlalchemy import func
+    q = request.args.get("q", "").strip()
+    query = db.session.query(
+        Archive.responsible, func.count(Archive.id).label("cnt")
+    ).filter(Archive.responsible != None, Archive.responsible != "")
+    if q:
+        query = query.filter(Archive.responsible.ilike(f"%{q}%"))
+    rows = query.group_by(Archive.responsible).order_by(
+        func.count(Archive.id).desc()
+    ).limit(50).all()
+    return jsonify([{"name": r, "count": c} for r, c in rows])
+
+
+# ─── 专题档案类型管理 ─────────────────────────────────────────────────────────
+
+@catalog_bp.route("/api/topic-types")
+@login_required
+def api_topic_types():
+    """获取所有专题档案类型（含禁用的，管理员可见；普通用户只看启用的）"""
+    if current_user.is_admin():
+        types = SpecialTopicType.query.order_by(SpecialTopicType.sort_order, SpecialTopicType.id).all()
+    else:
+        types = SpecialTopicType.query.filter_by(is_active=True).order_by(
+            SpecialTopicType.sort_order, SpecialTopicType.id
+        ).all()
+    return jsonify([t.to_dict() for t in types])
+
+
+@catalog_bp.route("/api/topic-types", methods=["POST"])
+@login_required
+def api_topic_types_create():
+    """新增专题档案类型（管理员）"""
+    if not current_user.is_admin():
+        return jsonify({"ok": False, "msg": "仅管理员可操作"}), 403
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "msg": "类型名称不能为空"})
+    if SpecialTopicType.query.filter_by(name=name).first():
+        return jsonify({"ok": False, "msg": f"类型名称 '{name}' 已存在"})
+    max_order = db.session.query(db.func.max(SpecialTopicType.sort_order)).scalar() or 0
+    t = SpecialTopicType(
+        name=name,
+        description=(data.get("description") or "").strip(),
+        sort_order=int(data.get("sort_order", max_order + 1)),
+        is_active=bool(data.get("is_active", True)),
+    )
+    db.session.add(t)
+    db.session.add(OperationLog(
+        user_id=current_user.id, action="create",
+        target_type="topic_type", target_id=0,
+        detail=f"新增专题类型：{name}", ip_address=request.remote_addr,
+    ))
+    db.session.commit()
+    return jsonify({"ok": True, "id": t.id, "data": t.to_dict()})
+
+
+@catalog_bp.route("/api/topic-types/<int:tid>", methods=["POST"])
+@login_required
+def api_topic_types_update(tid):
+    """修改专题档案类型（管理员）"""
+    if not current_user.is_admin():
+        return jsonify({"ok": False, "msg": "仅管理员可操作"}), 403
+    t = SpecialTopicType.query.get_or_404(tid)
+    data = request.json or {}
+    new_name = (data.get("name") or "").strip()
+    if new_name and new_name != t.name:
+        conflict = SpecialTopicType.query.filter_by(name=new_name).first()
+        if conflict and conflict.id != tid:
+            return jsonify({"ok": False, "msg": f"类型名称 '{new_name}' 已存在"})
+        t.name = new_name
+    if "description" in data:
+        t.description = (data["description"] or "").strip()
+    if "sort_order" in data:
+        try:
+            t.sort_order = int(data["sort_order"])
+        except (TypeError, ValueError):
+            pass
+    if "is_active" in data:
+        t.is_active = bool(data["is_active"])
+    db.session.add(OperationLog(
+        user_id=current_user.id, action="update",
+        target_type="topic_type", target_id=tid,
+        detail=f"修改专题类型：{t.name}", ip_address=request.remote_addr,
+    ))
+    db.session.commit()
+    return jsonify({"ok": True, "data": t.to_dict()})
+
+
+@catalog_bp.route("/api/topic-types/<int:tid>/delete", methods=["POST"])
+@login_required
+def api_topic_types_delete(tid):
+    """删除专题档案类型（管理员；若已有档案使用该类型则禁止删除）"""
+    if not current_user.is_admin():
+        return jsonify({"ok": False, "msg": "仅管理员可操作"}), 403
+    t = SpecialTopicType.query.get_or_404(tid)
+    count = Archive.query.filter_by(category="专题", topic_type=t.name).count()
+    if count > 0:
+        return jsonify({"ok": False, "msg": f"该类型下还有 {count} 条档案，无法删除。请先修改这些档案的类型后再删除。"})
+    db.session.add(OperationLog(
+        user_id=current_user.id, action="delete",
+        target_type="topic_type", target_id=tid,
+        detail=f"删除专题类型：{t.name}", ip_address=request.remote_addr,
+    ))
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 # ─── 批量修改 ────────────────────────────────────────────────────────────────
@@ -189,6 +315,9 @@ def export_data():
     category = request.args.get("category", "").strip()
     archive_year = request.args.get("archive_year", "").strip()
     retention_period = request.args.get("retention_period", "").strip()
+    responsible_filter = request.args.get("responsible", "").strip()
+    object_type_filter = request.args.get("object_type", "").strip()
+    topic_type_filter = request.args.get("topic_type", "").strip()
     search_value = request.args.get("q", "").strip()
 
     query = Archive.query
@@ -201,6 +330,12 @@ def export_data():
             pass
     if retention_period:
         query = query.filter(Archive.retention_period == retention_period)
+    if object_type_filter:
+        query = query.filter(Archive.object_type == object_type_filter)
+    if topic_type_filter:
+        query = query.filter(Archive.topic_type == topic_type_filter)
+    if responsible_filter:
+        query = query.filter(Archive.responsible.ilike(f"%{responsible_filter}%"))
     if search_value:
         pattern = f"%{search_value}%"
         query = query.filter(or_(
@@ -475,6 +610,84 @@ def detail(archive_id):
         borrows=borrows,
         destructions=destructions,
     )
+
+
+@catalog_bp.route("/<int:archive_id>/download")
+@login_required
+def download_electronic(archive_id):
+    """下载档案电子版（仅管理员或已审批借阅用户）"""
+    archive = Archive.query.get_or_404(archive_id)
+    if not archive.electronic_path:
+        abort(404)
+    # 权限：管理员可直接下载；普通用户需有已通过的借阅记录
+    if current_user.role != "admin":
+        from app.models import Borrow
+        approved = Borrow.query.filter_by(
+            archive_id=archive_id,
+            borrower_id=current_user.id,
+            status="已通过",
+        ).first()
+        if not approved:
+            abort(403)
+
+    static_folder = current_app.static_folder
+    file_path = os.path.join(static_folder, archive.electronic_path)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    # 原始文件名：用标题+扩展名
+    ext = os.path.splitext(archive.electronic_path)[1]
+    safe_title = re.sub(r'[\\/:*?"<>|]', "_", archive.title or "档案")[:80]
+    download_name = f"{safe_title}{ext}"
+
+    log = OperationLog(
+        user_id=current_user.id,
+        action="download",
+        target_type="archive",
+        target_id=archive_id,
+        detail=f"下载电子版：{archive.title}",
+        ip_address=request.remote_addr,
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    return send_file(file_path, as_attachment=True, download_name=download_name)
+
+
+@catalog_bp.route("/<int:archive_id>/preview")
+@login_required
+def preview_electronic(archive_id):
+    """在线预览电子版（PDF/图片直接返回，其他提示下载）"""
+    archive = Archive.query.get_or_404(archive_id)
+    if not archive.electronic_path:
+        abort(404)
+    if current_user.role != "admin":
+        from app.models import Borrow
+        approved = Borrow.query.filter_by(
+            archive_id=archive_id,
+            borrower_id=current_user.id,
+            status="已通过",
+        ).first()
+        if not approved:
+            abort(403)
+
+    static_folder = current_app.static_folder
+    file_path = os.path.join(static_folder, archive.electronic_path)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    ext = os.path.splitext(archive.electronic_path)[1].lower()
+    mime_map = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif",
+    }
+    mimetype = mime_map.get(ext)
+    if mimetype:
+        return send_file(file_path, mimetype=mimetype)
+    else:
+        # 非预览格式，走下载
+        return preview_electronic.__wrapped__(archive_id) if hasattr(preview_electronic, '__wrapped__') else download_electronic(archive_id)
 
 
 @catalog_bp.route("/<int:archive_id>/edit", methods=["GET", "POST"])
